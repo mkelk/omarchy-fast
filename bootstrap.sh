@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eEo pipefail
 
-REPO_URL="https://github.com/melk/omarchy-fast.git"
+REPO_URL="https://github.com/mkelk/omarchy-fast.git"
 INSTALL_DIR="$HOME/omarchy-fast"
 
 echo "🚀 Omarchy Fast-Start Bootstrap"

@@ -18,13 +18,13 @@ Fast-start setup for Omarchy with custom migrations. This repository provides a 
 Run this single command to bootstrap everything:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/melk/omarchy-fast/main/bootstrap.sh | bash
+wget -qO- https://raw.githubusercontent.com/mkelk/omarchy-fast/main/bootstrap.sh | bash
 ```
 
 Or with curl:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/melk/omarchy-fast/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mkelk/omarchy-fast/main/bootstrap.sh | bash
 ```
 
 Then run the migrations:
