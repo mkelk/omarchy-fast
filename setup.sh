@@ -68,9 +68,9 @@ for migration in "$MIGRATIONS_SOURCE"/*.sh; do
         new_name="${new_timestamp}_${description}.sh"
         target_file="$MIGRATIONS_TARGET/$new_name"
 
-        # Skip if already exists
-        if [ -f "$target_file" ]; then
-            echo "  ⊘ $new_name (already exists)"
+        # Skip if a migration with this description already exists (any timestamp)
+        if ls "$MIGRATIONS_TARGET"/*"_${description}.sh" 2>/dev/null | grep -q .; then
+            echo "  ⊘ $description (already exists)"
         else
             # Copy migration with new timestamp
             cp "$migration" "$target_file"
