@@ -50,23 +50,26 @@ Omarchy uses shell scripts in `~/.local/share/omarchy/migrations/` to manage sys
 
 ### This Repository
 
-The `setup.sh` script symlinks your custom migrations from this repo into Omarchy's migrations directory. This allows you to:
+The `setup.sh` script copies your custom migrations into Omarchy's migrations directory with auto-incremented timestamps. This ensures they always run after existing Omarchy migrations. Benefits:
 - Version control your migrations with Git
-- Edit migrations in your repo
-- Re-run `omarchy-migrate` to apply changes
+- Works on any Omarchy version, past or future
+- Migrations are automatically numbered higher than existing ones
+- Re-run setup to install new migrations from your repo
 - Share your Omarchy setup with others
 
 ## Creating Custom Migrations
 
 ### Manual Creation
 
-Create a new migration file in the `migrations/` directory:
+Create a new migration file in the `migrations/` directory. Use any timestamp - the setup script will renumber it:
 
 ```bash
-# Create with timestamp and description
-touch migrations/$(date +%s)_install_my_app.sh
-chmod +x migrations/$(date +%s)_install_my_app.sh
+# Create with any timestamp and description (timestamp will be auto-adjusted)
+touch migrations/0000000000_install_my_app.sh
+chmod +x migrations/0000000000_install_my_app.sh
 ```
+
+The setup script will automatically copy this with a timestamp higher than all existing Omarchy migrations.
 
 ### Migration Template
 
@@ -85,14 +88,16 @@ echo "Migration completed successfully!"
 
 ### Example Migrations
 
-- `1700000000_install_vscode.sh` - Installs Visual Studio Code (included as example)
+- `1763216799_install_vscode.sh` - Installs Visual Studio Code (included as example)
+  - The actual timestamp will be auto-adjusted when installed to be higher than existing Omarchy migrations
 
 ## Workflow
 
-1. **Edit migrations** in this repository
+1. **Create/edit migrations** in this repository (`migrations/` directory)
 2. **Commit and push** to Git for version control
-3. **Run migrations** with `omarchy-migrate` to apply changes
-4. **Re-run setup** on new systems: just clone and run `./setup.sh`
+3. **Run setup script** - copies migrations to Omarchy with correct timestamps
+4. **Run `omarchy-migrate`** - applies the new migrations
+5. **On new systems** - bootstrap clones repo and setup installs migrations automatically
 
 ## Managing Migrations
 
@@ -108,40 +113,51 @@ This will run all pending migrations. Already-completed migrations are skipped a
 
 If a migration fails, you'll be prompted to skip it or abort. Skipped migrations won't run again.
 
-### Editing Existing Migrations
+### Adding New Migrations
 
-Since migrations are symlinked, you can edit them directly in this repo:
-
-```bash
-nvim migrations/1700000000_install_vscode.sh
-# Make your changes and save
-omarchy-migrate  # Skipped - already ran
-```
-
-To re-run an edited migration, remove its state file:
+After creating a new migration in your repo:
 
 ```bash
-rm ~/.local/state/omarchy/migrations/1700000000_install_vscode.sh
-omarchy-migrate  # Will run again
+# Add new migration to your repo
+nvim migrations/0000000000_install_neovim.sh
+# Save and commit
+
+# Re-run setup to install it
+./setup.sh
+
+# Run the new migration
+omarchy-migrate
 ```
+
+### Updating Existing Migrations
+
+Since migrations are copied (not symlinked), you need to:
+1. Edit the migration in your repo
+2. Remove the old migration from Omarchy: `rm ~/.local/share/omarchy/migrations/*_description.sh`
+3. Remove its state marker: `rm ~/.local/state/omarchy/migrations/*_description.sh`
+4. Re-run setup: `./setup.sh`
+5. Run migrations: `omarchy-migrate`
 
 ## Repository Structure
 
 ```
 omarchy-fast/
-├── README.md          # This file
-├── setup.sh           # Setup script to symlink migrations
-└── migrations/        # Your custom migration scripts
-    └── 1700000000_install_vscode.sh
+├── README.md                        # This file
+├── bootstrap.sh                     # One-command installer
+├── setup.sh                         # Copies migrations with auto-timestamps
+└── migrations/                      # Your custom migration scripts
+    └── 1763216799_install_vscode.sh # Timestamps are auto-adjusted during install
 ```
 
 ## Tips
 
 - Use descriptive names for migrations: `{timestamp}_{description}.sh`
+- The timestamp in your repo doesn't matter - it will be auto-adjusted during setup
 - Make migrations idempotent when possible (safe to run multiple times)
 - Test migrations before committing
 - Keep migrations focused on a single task
 - Document complex migrations with comments
+- Re-run `./setup.sh` anytime you add new migrations to your repo
 
 ## License
 

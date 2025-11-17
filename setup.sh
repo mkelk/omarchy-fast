@@ -28,36 +28,68 @@ fi
 echo "✓ Migrations directory ready"
 echo ""
 
-# Symlink all migration files
-echo "Symlinking custom migrations..."
+# Find the highest timestamp in Omarchy migrations
+echo "Detecting latest Omarchy migration..."
+highest_timestamp=0
+if [ -d "$MIGRATIONS_TARGET" ]; then
+    for existing in "$MIGRATIONS_TARGET"/*.sh; do
+        if [ -f "$existing" ]; then
+            filename=$(basename "$existing")
+            # Extract timestamp (first part before _ or .sh)
+            timestamp=$(echo "$filename" | sed 's/[^0-9].*//')
+            if [ -n "$timestamp" ] && [ "$timestamp" -gt "$highest_timestamp" ]; then
+                highest_timestamp=$timestamp
+            fi
+        fi
+    done
+fi
+
+if [ "$highest_timestamp" -gt 0 ]; then
+    echo "✓ Latest Omarchy migration: $highest_timestamp"
+else
+    echo "✓ No existing migrations found, using current timestamp"
+    highest_timestamp=$(date +%s)
+fi
+
+echo ""
+
+# Copy all migration files with new timestamps
+echo "Installing custom migrations..."
 migration_count=0
+new_timestamp=$((highest_timestamp + 1))
 
 for migration in "$MIGRATIONS_SOURCE"/*.sh; do
     if [ -f "$migration" ]; then
         migration_name=$(basename "$migration")
-        target_link="$MIGRATIONS_TARGET/$migration_name"
+        # Extract description (everything after first _ or use filename)
+        description=$(echo "$migration_name" | sed 's/^[0-9]*_//' | sed 's/\.sh$//')
 
-        # Remove existing symlink or file
-        if [ -L "$target_link" ]; then
-            rm "$target_link"
-        elif [ -f "$target_link" ]; then
-            echo "⚠ Warning: $migration_name already exists (not a symlink). Skipping."
-            continue
+        # Create new filename with incremented timestamp
+        new_name="${new_timestamp}_${description}.sh"
+        target_file="$MIGRATIONS_TARGET/$new_name"
+
+        # Skip if already exists
+        if [ -f "$target_file" ]; then
+            echo "  ⊘ $new_name (already exists)"
+        else
+            # Copy migration with new timestamp
+            cp "$migration" "$target_file"
+            chmod +x "$target_file"
+            echo "  → $new_name"
+            ((migration_count++))
         fi
 
-        # Create symlink
-        ln -s "$migration" "$target_link"
-        echo "  → $migration_name"
-        ((migration_count++))
+        # Increment for next migration
+        ((new_timestamp++))
     fi
 done
 
 echo ""
 echo "✅ Setup complete!"
-echo "   Symlinked $migration_count migration(s)"
+echo "   Installed $migration_count new migration(s)"
 echo ""
 echo "Next steps:"
-echo "  1. Review your migrations in: $MIGRATIONS_SOURCE"
-echo "  2. Run migrations with: omarchy-migrate"
-echo "  3. Edit migrations in this repo and re-run omarchy-migrate to apply changes"
+echo "  1. Run migrations with: omarchy-migrate"
+echo "  2. To add more migrations, edit files in: $MIGRATIONS_SOURCE"
+echo "  3. Re-run this setup script to install new migrations"
 echo ""
