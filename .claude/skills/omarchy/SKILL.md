@@ -30,6 +30,9 @@ When a user asks about Omarchy:
    - Check migration files to understand installation history
    - Look at configuration files to understand current setup
    - Examine the actual code to provide accurate, specific answers
+   - Check the official Omarchy documentation:
+     - Official site: https://omarchy.org
+     - Manual: https://learn.omacom.io/2/the-omarchy-manual
 
 4. **Provide Specific Guidance**
    - Show actual commands from the Omarchy installation
@@ -50,6 +53,7 @@ Use these tools to inspect the Omarchy installation:
 - `Grep` - Search for patterns in Omarchy code
 - `Glob` - Find Omarchy files matching patterns
 - `Bash` - List directories, check commands
+- `WebFetch` - Fetch official documentation from omarchy.org when needed
 
 ## Examples
 
