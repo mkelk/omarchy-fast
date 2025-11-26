@@ -138,6 +138,22 @@ Since migrations are copied (not symlinked), you need to:
 4. Re-run setup: `./setup.sh`
 5. Run migrations: `omarchy-migrate`
 
+### Resetting After `omarchy-reinstall`
+
+If you run `omarchy-reinstall` to reset Omarchy to defaults, use the reset script to cleanly re-setup your custom migrations:
+
+```bash
+./reset.sh
+omarchy-migrate
+```
+
+This will:
+1. Remove your custom migrations from Omarchy
+2. Clear their state markers (so they run again)
+3. Re-run `setup.sh` to reinstall them
+
+You can also use `reset.sh` anytime you want to re-run your migrations from scratch.
+
 ## Repository Structure
 
 ```
@@ -145,6 +161,7 @@ omarchy-fast/
 ├── README.md                        # This file
 ├── bootstrap.sh                     # One-command installer
 ├── setup.sh                         # Copies migrations with auto-timestamps
+├── reset.sh                         # Reset and re-run migrations from scratch
 └── migrations/                      # Your custom migration scripts
     └── 1763216799_install_vscode.sh # Timestamps are auto-adjusted during install
 ```
