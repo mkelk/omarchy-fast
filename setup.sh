@@ -76,11 +76,11 @@ for migration in "$MIGRATIONS_SOURCE"/*.sh; do
             cp "$migration" "$target_file"
             chmod +x "$target_file"
             echo "  → $new_name"
-            ((migration_count++))
+            migration_count=$((migration_count + 1))
         fi
 
         # Increment for next migration
-        ((new_timestamp++))
+        new_timestamp=$((new_timestamp + 1))
     fi
 done
 
