@@ -5,10 +5,11 @@ echo "melk: Android development setup (Arch Linux)"
 
 # Config
 ANDROID_SDK_ROOT_DEFAULT="$HOME/Android/Sdk"
-AVD_NAME="${AVD_NAME:-Pixel_6_API_34}"
-SYS_IMAGE="${SYS_IMAGE:-system-images;android-34;google_apis;x86_64}"
-PLATFORM="${PLATFORM:-platforms;android-34}"
-BUILD_TOOLS="${BUILD_TOOLS:-build-tools;34.0.0}"
+AVD_NAME="${AVD_NAME:-Pixel8_API35}"
+SYS_IMAGE="${SYS_IMAGE:-system-images;android-35;google_apis_playstore;x86_64}"
+PLATFORM="${PLATFORM:-platforms;android-35}"
+BUILD_TOOLS="${BUILD_TOOLS:-build-tools;35.0.0}"
+DEVICE_PROFILE="${DEVICE_PROFILE:-pixel_8}"
 START_EMULATOR="${START_EMULATOR:-false}"
 
 # Android Studio (AUR)
@@ -161,6 +162,10 @@ echo "Configuring Android SDK environment variables in ~/.bashrc"
 update_bashrc_var "ANDROID_SDK_ROOT" "$ANDROID_SDK_ROOT_DEFAULT"
 update_bashrc_var "ANDROID_HOME" "\$ANDROID_SDK_ROOT"
 
+# QT_QPA_PLATFORM=xcb is required for Android Emulator on Wayland/Hyprland
+# The emulator's Qt doesn't have the wayland plugin, so we force XCB (XWayland)
+update_bashrc_var "QT_QPA_PLATFORM" "xcb"
+
 # Update PATH with Android SDK components
 ANDROID_PATHS="\$ANDROID_SDK_ROOT/platform-tools:\$ANDROID_SDK_ROOT/emulator:\$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:\$ANDROID_SDK_ROOT/tools:\$ANDROID_SDK_ROOT/tools/bin"
 update_bashrc_path "$ANDROID_PATHS"
@@ -220,21 +225,38 @@ else
   echo "Skipping sdkmanager installs (not found)."
 fi
 
+# Find emulator binary early (needed for AVD checks)
+EMULATOR_BIN=""
+if [ -x "$ANDROID_SDK_ROOT/emulator/emulator" ]; then
+  EMULATOR_BIN="$ANDROID_SDK_ROOT/emulator/emulator"
+elif [ -x "/opt/android-sdk/emulator/emulator" ]; then
+  EMULATOR_BIN="/opt/android-sdk/emulator/emulator"
+fi
+
 # Create AVD if missing
 if command -v avdmanager &>/dev/null; then
   # First ensure we have the AVD directory
   mkdir -p "$HOME/.android/avd" 2>/dev/null || true
   mkdir -p "$ANDROID_SDK_ROOT/avd" 2>/dev/null || true
 
-  if ! "$ANDROID_SDK_ROOT/emulator/emulator" -list-avds 2>/dev/null | grep -qx "$AVD_NAME"; then
+  # Check if AVD already exists
+  AVD_EXISTS=false
+  if [ -n "$EMULATOR_BIN" ] && "$EMULATOR_BIN" -list-avds 2>/dev/null | grep -qx "$AVD_NAME"; then
+    AVD_EXISTS=true
+  fi
+
+  if [ "$AVD_EXISTS" = "false" ]; then
     echo "Creating AVD: $AVD_NAME"
 
     # First, let's check what system images are available
     echo "Available system images:"
     sdkmanager $SDKMANAGER_OPTS --list 2>/dev/null | grep "system-images" | head -10
 
-    # Try to find a suitable system image from installed packages
-    AVAILABLE_IMAGE=$(sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep "system-images;android-34" | grep -E "(google_apis|default)" | head -1 | awk '{print $1}')
+    # Try to find a suitable system image from installed packages (prefer android-35)
+    AVAILABLE_IMAGE=$(sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep "system-images;android-35" | grep -E "(google_apis|default)" | head -1 | awk '{print $1}')
+    if [ -z "$AVAILABLE_IMAGE" ]; then
+      AVAILABLE_IMAGE=$(sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep "system-images;android-34" | grep -E "(google_apis|default)" | head -1 | awk '{print $1}')
+    fi
 
     if [ -n "$AVAILABLE_IMAGE" ]; then
       echo "Using installed system image: $AVAILABLE_IMAGE"
@@ -242,24 +264,24 @@ if command -v avdmanager &>/dev/null; then
       echo "Debug: avdmanager path = $(which avdmanager)"
 
       # Try different approaches to create AVD
-      echo "no" | ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" avdmanager create avd -n "$AVD_NAME" -k "$AVAILABLE_IMAGE" || {
+      echo "no" | ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" avdmanager create avd -n "$AVD_NAME" -k "$AVAILABLE_IMAGE" -d "$DEVICE_PROFILE" || {
         echo "Retrying with --force flag..."
-        echo "no" | ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" avdmanager create avd -n "$AVD_NAME" -k "$AVAILABLE_IMAGE" --force || {
+        echo "no" | ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" avdmanager create avd -n "$AVD_NAME" -k "$AVAILABLE_IMAGE" -d "$DEVICE_PROFILE" --force || {
           echo "Retrying without device specification..."
-          echo "no" | ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" avdmanager create avd -n "$AVD_NAME" -k "$AVAILABLE_IMAGE" --force --tag google_apis || {
+          echo "no" | ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" avdmanager create avd -n "$AVD_NAME" -k "$AVAILABLE_IMAGE" --force || {
             echo "Failed to create AVD $AVD_NAME with image $AVAILABLE_IMAGE"
             echo "Debug: Checking system image directory structure..."
-            echo "Looking for: $ANDROID_SDK_ROOT/system-images/android-34/"
+            echo "Looking for: $ANDROID_SDK_ROOT/system-images/"
             ls -la "$ANDROID_SDK_ROOT/system-images/" 2>/dev/null || echo "system-images directory not found"
             echo ""
-            echo "Contents of android-34 directory:"
-            ls -la "$ANDROID_SDK_ROOT/system-images/android-34/" 2>/dev/null || echo "android-34 directory not found"
+            echo "Contents of android-35 directory:"
+            ls -la "$ANDROID_SDK_ROOT/system-images/android-35/" 2>/dev/null || echo "android-35 directory not found"
             echo ""
-            echo "Contents of google_apis subdirectory:"
-            ls -la "$ANDROID_SDK_ROOT/system-images/android-34/google_apis/" 2>/dev/null || echo "google_apis directory not found"
+            echo "Contents of google_apis_playstore subdirectory:"
+            ls -la "$ANDROID_SDK_ROOT/system-images/android-35/google_apis_playstore/" 2>/dev/null || echo "google_apis_playstore directory not found"
             echo ""
             echo "Contents of x86_64 subdirectory:"
-            ls -la "$ANDROID_SDK_ROOT/system-images/android-34/google_apis/x86_64/" 2>/dev/null || echo "x86_64 directory not found"
+            ls -la "$ANDROID_SDK_ROOT/system-images/android-35/google_apis_playstore/x86_64/" 2>/dev/null || echo "x86_64 directory not found"
             echo ""
             echo "Checking what avdmanager can see:"
             ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" avdmanager list target 2>/dev/null || echo "Failed to list targets"
@@ -300,11 +322,12 @@ if [ -f "./bin/adb" ]; then
 fi
 
 # Optional: start emulator (check if already running)
-if [ "$START_EMULATOR" = "true" ] && [ -x "$ANDROID_SDK_ROOT/emulator/emulator" ]; then
+if [ "$START_EMULATOR" = "true" ] && [ -n "$EMULATOR_BIN" ]; then
   # Check if emulator is already running
   if ! adb devices 2>/dev/null | grep -q "emulator"; then
     echo "Starting emulator: $AVD_NAME"
-    nohup "$ANDROID_SDK_ROOT/emulator/emulator" -avd "$AVD_NAME" -netdelay none -netspeed full >/dev/null 2>&1 &
+    # QT_QPA_PLATFORM=xcb is required for Wayland/Hyprland
+    QT_QPA_PLATFORM=xcb nohup "$EMULATOR_BIN" -avd "$AVD_NAME" -netdelay none -netspeed full >/dev/null 2>&1 &
     sleep 5
   else
     echo "Emulator already running"
@@ -317,8 +340,18 @@ echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 echo "Using adb: $(command -v adb || echo 'not found')"
 adb version 2>/dev/null | sed -n '1,3p' || true
 echo "Available AVDs:"
-"$ANDROID_SDK_ROOT/emulator/emulator" -list-avds 2>/dev/null || true
+if [ -n "$EMULATOR_BIN" ]; then
+  "$EMULATOR_BIN" -list-avds 2>/dev/null || true
+else
+  echo "(emulator not found)"
+fi
 
+echo ""
 echo "✓ Android setup complete"
+echo ""
+echo "To run the emulator:"
+echo "  emulator -avd $AVD_NAME"
+echo ""
+echo "Note: QT_QPA_PLATFORM=xcb is set in ~/.bashrc for Wayland/Hyprland compatibility"
 echo "Tip: open a new shell or run: source ~/.bashrc"
 echo "✓ Migration complete"
