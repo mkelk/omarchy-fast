@@ -5,10 +5,10 @@ echo "melk: Android development setup (Arch Linux)"
 
 # Config
 ANDROID_SDK_ROOT_DEFAULT="$HOME/Android/Sdk"
-AVD_NAME="${AVD_NAME:-Pixel8_API35}"
-SYS_IMAGE="${SYS_IMAGE:-system-images;android-35;google_apis_playstore;x86_64}"
-PLATFORM="${PLATFORM:-platforms;android-35}"
-BUILD_TOOLS="${BUILD_TOOLS:-build-tools;35.0.0}"
+AVD_NAME="${AVD_NAME:-Pixel8_API36}"
+SYS_IMAGE="${SYS_IMAGE:-system-images;android-36;google_apis_playstore;x86_64}"
+PLATFORM="${PLATFORM:-platforms;android-36}"
+BUILD_TOOLS="${BUILD_TOOLS:-build-tools;36.0.0}"
 DEVICE_PROFILE="${DEVICE_PROFILE:-pixel_8}"
 START_EMULATOR="${START_EMULATOR:-false}"
 
@@ -61,21 +61,37 @@ if [ ! -d "$ANDROID_SDK_ROOT" ]; then
   mkdir -p "$ANDROID_SDK_ROOT"
 fi
 
-# Prefer cmdline-tools from AUR location if present (idempotent linking)
+# Install a REAL cmdline-tools into the SDK root (NOT a symlink).
+# avdmanager/sdkmanager derive the SDK root from their own resolved location.
+# A symlink to /opt/android-sdk makes them resolve the root to /opt, where no
+# system images live, which breaks AVD creation with:
+#   "Error: Package path is not valid. Valid system image paths are: null"
 AUR_SDK="/opt/android-sdk"
-if [ -d "$AUR_SDK/cmdline-tools/latest/bin" ] && [ ! -d "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" ]; then
-  echo "Linking cmdline-tools from $AUR_SDK into $ANDROID_SDK_ROOT"
-  mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-  ln -sfn "$AUR_SDK/cmdline-tools/latest" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-elif [ -L "$ANDROID_SDK_ROOT/cmdline-tools/latest" ]; then
-  echo "cmdline-tools symlink already exists"
-elif [ -d "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" ]; then
+mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+# Remove any stale symlink left behind by older versions of this migration
+if [ -L "$ANDROID_SDK_ROOT/cmdline-tools/latest" ]; then
+  echo "Removing stale cmdline-tools symlink"
+  rm -f "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+fi
+if [ ! -d "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" ]; then
+  if [ -x "$AUR_SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+    echo "Installing cmdline-tools (real copy) into $ANDROID_SDK_ROOT"
+    yes 2>/dev/null | "$AUR_SDK/cmdline-tools/latest/bin/sdkmanager" \
+      --sdk_root="$ANDROID_SDK_ROOT" --install "cmdline-tools;latest" || true
+  fi
+else
   echo "cmdline-tools already available in $ANDROID_SDK_ROOT"
 fi
 
 # Set env vars for this run
 export ANDROID_SDK_ROOT
 export ANDROID_HOME="$ANDROID_SDK_ROOT"
+# Pin the AVD location so avdmanager (which creates) and the emulator (which
+# reads) agree. Without this, avdmanager may write to ~/.config/.android/avd
+# while the emulator looks in ~/.android/avd, so `emulator -list-avds` is empty.
+export ANDROID_USER_HOME="$HOME/.android"
+export ANDROID_AVD_HOME="$HOME/.android/avd"
+mkdir -p "$ANDROID_AVD_HOME"
 if [ -d "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" ]; then
   export PATH="$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/tools:$ANDROID_SDK_ROOT/tools/bin:$PATH"
 else
@@ -166,6 +182,9 @@ update_bashrc_var "ANDROID_HOME" "\$ANDROID_SDK_ROOT"
 # The emulator's Qt doesn't have the wayland plugin, so we force XCB (XWayland)
 update_bashrc_var "QT_QPA_PLATFORM" "xcb"
 
+# Keep AVD location consistent between avdmanager and the emulator
+update_bashrc_var "ANDROID_AVD_HOME" "\$HOME/.android/avd"
+
 # Update PATH with Android SDK components
 ANDROID_PATHS="\$ANDROID_SDK_ROOT/platform-tools:\$ANDROID_SDK_ROOT/emulator:\$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:\$ANDROID_SDK_ROOT/tools:\$ANDROID_SDK_ROOT/tools/bin"
 update_bashrc_path "$ANDROID_PATHS"
@@ -209,16 +228,27 @@ fi
 if command -v sdkmanager &>/dev/null; then
   echo "Checking/Installing SDK components via sdkmanager..."
 
-  # Check each component individually and only install if missing
+  # Check each component individually and only install if missing.
+  # NOTE: --list_installed indents the Path column, so anchoring with ^ never
+  # matches. Compare the first whitespace-delimited field exactly instead.
   for component in "platform-tools" "emulator" "$PLATFORM" "$BUILD_TOOLS" "$SYS_IMAGE"; do
-    if ! sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep -q "^${component}"; then
-      echo "Installing missing component: $component"
-      # Auto-accept licenses during installation
-      yes | sdkmanager $SDKMANAGER_OPTS --install "$component" 2>/dev/null || {
-        echo "Failed to install $component"; exit 1;
-      }
-    else
+    if sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null \
+        | awk -v c="$component" '$1==c{f=1} END{exit !f}'; then
       echo "Component already installed: $component"
+      continue
+    fi
+    echo "Installing missing component: $component"
+    # Auto-accept licenses during installation.
+    # IMPORTANT: do NOT use the pipeline's exit status here. Under
+    # `set -o pipefail`, `yes` gets SIGPIPE when sdkmanager closes stdin and
+    # exits 141, which makes a *successful* install look like a failure. Read
+    # sdkmanager's own status via PIPESTATUS instead.
+    set +o pipefail
+    yes 2>/dev/null | sdkmanager $SDKMANAGER_OPTS --install "$component"
+    install_status=${PIPESTATUS[1]}
+    set -o pipefail
+    if [ "$install_status" -ne 0 ]; then
+      echo "Failed to install $component"; exit 1
     fi
   done
 else
