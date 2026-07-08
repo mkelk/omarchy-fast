@@ -278,14 +278,28 @@ if command -v avdmanager &>/dev/null; then
   if [ "$AVD_EXISTS" = "false" ]; then
     echo "Creating AVD: $AVD_NAME"
 
-    # First, let's check what system images are available
+    # First, let's check what system images are available.
+    # NOTE: `... | head -N` closes the pipe early, sending sdkmanager a SIGPIPE
+    # (exit 141). Under `set -o pipefail` that makes the pipeline "fail" and
+    # `set -e` aborts the whole migration. Guard every discovery pipeline with
+    # `|| true` so a closed pipe / no-match can never kill the script.
     echo "Available system images:"
-    sdkmanager $SDKMANAGER_OPTS --list 2>/dev/null | grep "system-images" | head -10
+    { sdkmanager $SDKMANAGER_OPTS --list 2>/dev/null | grep "system-images" | head -10; } || true
 
-    # Try to find a suitable system image from installed packages (prefer android-35)
-    AVAILABLE_IMAGE=$(sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep "system-images;android-35" | grep -E "(google_apis|default)" | head -1 | awk '{print $1}')
+    # Pick the system image to use. Prefer the image this migration is
+    # configured for ($SYS_IMAGE, e.g. android-36); only then fall back to
+    # older API levels. The previous version hard-coded android-35/34 and never
+    # matched the configured image, relying entirely on the generic fallback.
+    AVAILABLE_IMAGE=""
+    if sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null \
+        | awk -v c="$SYS_IMAGE" '$1==c{f=1} END{exit !f}'; then
+      AVAILABLE_IMAGE="$SYS_IMAGE"
+    fi
     if [ -z "$AVAILABLE_IMAGE" ]; then
-      AVAILABLE_IMAGE=$(sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep "system-images;android-34" | grep -E "(google_apis|default)" | head -1 | awk '{print $1}')
+      AVAILABLE_IMAGE=$(sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep "system-images;android-35" | grep -E "(google_apis|default)" | head -1 | awk '{print $1}') || true
+    fi
+    if [ -z "$AVAILABLE_IMAGE" ]; then
+      AVAILABLE_IMAGE=$(sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep "system-images;android-34" | grep -E "(google_apis|default)" | head -1 | awk '{print $1}') || true
     fi
 
     if [ -n "$AVAILABLE_IMAGE" ]; then
@@ -327,7 +341,7 @@ if command -v avdmanager &>/dev/null; then
       }
     else
       echo "No suitable Android 34 system image found in installed packages. Trying with any available API level..."
-      FALLBACK_IMAGE=$(sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep "system-images" | grep -E "(google_apis|default)" | head -1 | awk '{print $1}')
+      FALLBACK_IMAGE=$(sdkmanager $SDKMANAGER_OPTS --list_installed 2>/dev/null | grep "system-images" | grep -E "(google_apis|default)" | head -1 | awk '{print $1}') || true
 
       if [ -n "$FALLBACK_IMAGE" ]; then
         echo "Using fallback system image: $FALLBACK_IMAGE"
