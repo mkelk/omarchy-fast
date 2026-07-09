@@ -98,6 +98,52 @@ isn't an option next time):
 5. After reboot: new wireless interface showed up in `ip link show` /
    `iwctl device list`, Impala worked normally.
 
+## Slow uploads / clamped TX power (mt7921 CLC on DFS channels)
+
+Discovered 2026-07-09: connections *from* this ASUS to other hosts
+(`omarchy-dell`, `win-fw16`) were crawling. It was **not** power-save
+(`iw dev wlan0 get power_save` → off; already handled by migration
+`0000000013`). The real cause was a badly one-sided link:
+
+```
+rx bitrate: ~290 Mbit/s          ✅ downloads fine
+tx bitrate: ~20-27 Mbit/s        🔴 uploads collapsed
+tx retries: 544k  (vs 405k pkts) 🔴 >100% retry rate
+tx failed:  16.5k
+txpower:    0.00 dBm             🔴 (regdom DK/ETSI allows 26 dBm here)
+```
+
+Root cause: the **MediaTek mt7921/mt7925 CLC (Country Location Control)
+bug**. On a DFS "radar detection" 5GHz channel (we were on ch108 /
+5540 MHz), the card clamps its own TX power to ~0 dBm. RX is unaffected,
+so it looks like a healthy connection until you try to *send*. Because
+MT7902 rides the `mt7921e` driver, this ASUS is affected.
+
+**Diagnose** (the tells, in order):
+```bash
+iw dev wlan0 link | grep -E 'freq|bitrate'   # DFS chan + low tx bitrate?
+iw dev wlan0 info | grep txpower              # 0.00 dBm == clamped
+iw dev wlan0 station dump | grep -E 'tx retries|tx failed|txpower'
+iw phy phy0 channels | grep -A2 <freq>        # "Radar detection" == DFS chan
+```
+
+**Fix** — load the driver with `disable_clc=Y`. The morrownr/mt76 installer
+writes `/etc/modprobe.d/mt76_git.conf` with `disable_clc=N` by default, **and
+regenerates it on every driver (re)install/DKMS rebuild** — so this is
+re-asserted idempotently by migration
+`0000000016_wifi_disable_clc.sh` rather than left as a manual edit. That
+migration flips both the `mt7921_common_git` and `mt7925_common_git` lines to
+`=Y` and reloads the driver.
+
+Trade-off: `disable_clc` disables a regulatory-conformance feature (community-
+standard workaround; stays within the domain's own advertised power limits).
+The no-flag alternative is to move the *AP* to a non-DFS channel (36/40/44/48),
+which sidesteps the clamp entirely — do that instead when you control the AP.
+
+**Verify after reboot/reconnect:** `iw dev wlan0 info | grep txpower` should
+no longer read `0.00 dBm`, and `tx retries` in `station dump` should grow far
+more slowly relative to `tx packets`.
+
 ## What we tried first (didn't work, kept for reference)
 
 Two other community drivers were tried before finding `morrownr/mt76`,
