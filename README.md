@@ -57,6 +57,16 @@ The `setup.sh` script copies your custom migrations into Omarchy's migrations di
 - Re-run setup to install new migrations from your repo
 - Share your Omarchy setup with others
 
+## Local Setup (Secrets & Manual Steps)
+
+Migrations run non-interactively, so anything that needs a **secret** (password,
+token) or **interactive input** can't live in one. Those per-machine steps are
+documented separately in **[`docs/current/local-setup.md`](docs/current/local-setup.md)**.
+
+If a command installed by a migration "does nothing," a missing local-setup step
+is the usual cause — check that doc first. Example: `omarchy-fw16-windows` needs
+its Windows password stored in the keyring once with `secret-tool store …`.
+
 ## Creating Custom Migrations
 
 ### Manual Creation
@@ -162,6 +172,8 @@ omarchy-fast/
 ├── bootstrap.sh                     # One-command installer
 ├── setup.sh                         # Copies migrations with auto-timestamps
 ├── reset.sh                         # Reset and re-run migrations from scratch
+├── docs/                            # Reference notes & per-machine manual setup
+│   └── current/local-setup.md       # Secrets/interactive steps migrations can't do
 └── migrations/                      # Your custom migration scripts
     └── 1763216799_install_vscode.sh # Timestamps are auto-adjusted during install
 ```
