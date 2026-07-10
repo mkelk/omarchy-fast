@@ -4,9 +4,13 @@ Hardware-specific notes for getting Omarchy running well on this ASUS
 VivoBook. Kept separate from `migrations/` because this is
 troubleshooting/reference material, not a repeatable install step.
 
-## Status: working (2026-07-08)
+## Status: WiFi working, Bluetooth not (updated 2026-07-10)
 
-WiFi is up via the `morrownr/mt76` driver. See "The fix that worked" below.
+WiFi is up via the `morrownr/mt76` driver — see "The fix that worked" below,
+plus two later gotchas: the TX-power clamp and an intermittent no-DHCP-after-boot
+wedge (both documented below with fixes). Bluetooth has **never** worked on
+this install and is not fixable by driver fiddling — see the Bluetooth
+section for why and for the paths to getting it.
 
 ## After future Omarchy/pacman updates
 
@@ -143,6 +147,83 @@ which sidesteps the clamp entirely — do that instead when you control the AP.
 **Verify after reboot/reconnect:** `iw dev wlan0 info | grep txpower` should
 no longer read `0.00 dBm`, and `tx retries` in `station dump` should grow far
 more slowly relative to `tx packets`.
+
+## WiFi associates but never gets DHCP after boot (intermittent)
+
+Discovered 2026-07-10: after a boot, wifi *looks* connected but nothing
+works. The tells:
+
+```bash
+iwctl station wlan0 show      # State: connected, good RSSI, but
+                              # "No IP addresses  Is DHCP client configured?"
+networkctl                    # wlan0 stuck in "degraded (configuring)" forever
+```
+
+Layer 2 is genuinely fine — `ping -6 ff02::1%wlan0` (all-nodes multicast)
+got replies from the AP and other hosts — but the DHCPv4 exchange never
+completes. Not the firewall: zero UFW blocks on ports 67/68 in the journal.
+Meanwhile networkd DHCP on other interfaces (USB ethernet) works instantly,
+so it's the mt76 data path for the DHCP exchange specifically that's wedged.
+
+**Fix — reload the driver:**
+
+```bash
+sudo modprobe -r mt7921e_git mt7921_common_git
+sudo modprobe mt7921e_git
+```
+
+DHCP completes within seconds of the reload. Two side effects, both harmless:
+
+- The interface can come back as `wlan1` instead of `wlan0` (the old
+  netdev's teardown stalls — `page_pool_release_retry` in dmesg). Fine
+  because `20-wlan.network` matches `wl*`; the name reverts next reboot.
+- The Bluetooth function re-probes and fails again — irrelevant, it was
+  already broken (see below).
+
+Intermittent: hit on the 2026-07-10 16:01 boot; the very next boot got its
+lease with no intervention. Note that `omarchy-restart-wifi` only does
+`rfkill unblock` — it does **not** fix this; you need the modprobe reload.
+
+## Bluetooth: dead on every boot — NOT the wifi driver's fault
+
+Investigated 2026-07-10. Symptom: `bluetoothctl` shows no controller;
+kernel logs `Bluetooth: hci0: Opcode 0x0c03 failed: -110` — that's the HCI
+Reset command timing out, the very first thing btusb sends, before any
+firmware load is even attempted. BT is the USB function (`13d3:3579`) of
+the same MT7902 combo card.
+
+What we established, in order:
+
+- It fails on **every single boot** — journal shows 12/12 boots failed back
+  to 2026-07-08 (the whole life of this install). Not a wedge, not
+  power-state flakiness: it has simply never worked here.
+- Not missing firmware — `BT_RAM_CODE_MT7902_1_1_hdr.bin` is present in
+  linux-firmware. The failure happens before firmware would be loaded.
+- **Not `morrownr/mt76`'s fault.** Every soft reset fails (rfkill cycle,
+  `btusb` reload, USB `authorized` 0→1 toggle, BT re-probe with
+  `mt7921e_git` unloaded), and decisively: a full boot with `mt7921e_git`
+  blacklisted (module confirmed absent from `lsmod`) still failed with the
+  identical `-110`. The chip doesn't answer HCI Reset even when nothing has
+  touched the wifi side at all.
+
+Conclusion: **MT7902 Bluetooth is unsupported by btusb/btmtk as of kernel
+7.0.x.** Don't burn time on resets or driver experiments; it's a kernel
+support gap, same story as the wifi side was.
+
+**Paths to working BT**, best first:
+
+1. **Wait for mainline.** MediaTek's Feb 2026 patchset targets Linux 7.1
+   for wifi, with the btusb/btmtk Bluetooth patches expected in 7.1/7.2.
+   Re-test BT after each kernel bump (`bluetoothctl list`). ⚠️ **When
+   mainline MT7902 support lands, remove the morrownr DKMS driver**
+   (`sudo dkms remove mt76/1.0 --all`) so it doesn't shadow the in-kernel
+   driver.
+2. **[bupd/bt-driver-mt7902](https://github.com/bupd/bt-driver-mt7902)** —
+   patched btusb/btmtk as a DKMS package, explicitly lists this exact USB
+   ID (`13d3:3579`, tested on ASUS Vivobooks). Caveat: as of July 2026 only
+   tested up to kernel 6.19; may need patching to build on 7.0.x.
+3. **USB BT dongle** — zero-effort fallback; any Realtek/CSR one works out
+   of the box.
 
 ## What we tried first (didn't work, kept for reference)
 
