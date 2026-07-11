@@ -4,13 +4,15 @@ Hardware-specific notes for getting Omarchy running well on this ASUS
 VivoBook. Kept separate from `migrations/` because this is
 troubleshooting/reference material, not a repeatable install step.
 
-## Status: WiFi working, Bluetooth not (updated 2026-07-10)
+## Status: WiFi working, Bluetooth not (updated 2026-07-11)
 
 WiFi is up via the `morrownr/mt76` driver — see "The fix that worked" below,
 plus two later gotchas: the TX-power clamp and an intermittent no-DHCP-after-boot
 wedge (both documented below with fixes). Bluetooth has **never** worked on
 this install and is not fixable by driver fiddling — see the Bluetooth
-section for why and for the paths to getting it.
+section for why and for the paths to getting it. The trackpad occasionally
+dies mid-session — **do not suspend while it's dead**, that hangs the whole
+machine; see the trackpad section.
 
 ## After future Omarchy/pacman updates
 
@@ -224,6 +226,46 @@ support gap, same story as the wifi side was.
    tested up to kernel 6.19; may need patching to build on 7.0.x.
 3. **USB BT dongle** — zero-effort fallback; any Realtek/CSR one works out
    of the box.
+
+## Trackpad dies mid-session — and takes suspend down with it
+
+Seen twice as of 2026-07-11: the trackpad — PixArt `093A:3003`, ACPI
+`ASUP1303:00`, an I2C-HID device on the AMD I2C controller
+(`AMDI0010:03`) — stops responding mid-session. The controller chip wedges
+on the I2C bus and, like the Bluetooth chip, keeps standby power through
+soft resets, so once wedged it stays wedged until real power removal.
+
+The dangerous part: **suspending while the trackpad is dead hangs the
+entire machine** — screen off, no response, only holding the power button
+gets you out. Suspend is cooperative: the kernel asks every device to
+sleep, and the i2c-hid sleep command to the wedged chip never completes,
+so s2idle entry stalls partway through. Confirmed in both directions:
+both total-hang incidents were suspends attempted with a dead trackpad,
+and **suspend works fine when the trackpad is healthy** (the earlier
+"suspend is just broken on this laptop" conclusion was wrong).
+
+Recovery when the trackpad dies, in order:
+
+1. Driver rebind — free, takes seconds (untested so far, may not help if
+   the chip itself needs power cut):
+   ```bash
+   sudo modprobe -r i2c_hid_acpi && sudo modprobe i2c_hid_acpi
+   ```
+2. Full shutdown → power on. This is what has worked both times. (A warm
+   `reboot` may not cut the chip's standby power — untested.)
+3. **Never suspend as a recovery step.**
+
+Root cause not yet investigated. Next time it dies, before rebooting,
+capture the evidence:
+
+```bash
+journalctl -k | grep -iE 'i2c_hid|ASUP1303|pinctrl|irq'
+```
+
+Prime suspect on these AMD platforms: a GPIO interrupt issue
+(`pinctrl_amd`) killing the touchpad's interrupt line. With that log we
+could pursue a real fix (IRQ polling mode, GPIO quirk) instead of
+power-cycling.
 
 ## What we tried first (didn't work, kept for reference)
 
