@@ -65,6 +65,56 @@ omarchy-fw16-windows --lan    # force home-LAN IP
 
 ---
 
+## Chromium — full Google account (`omarchy-install-chromium-google-account`)
+
+Stock Chromium ships **without** Google's OAuth client credentials, so it can't
+sign in to a Google account at all — which means no sync, and none of your
+Google-saved payment methods / passwords / addresses autofill. (This is why
+autofill "just worked" in Chrome on Windows but not in Chromium here.) Omarchy
+bundles a helper that adds the credentials, after which Chromium does sign-in +
+sync like Chrome — **without installing Chrome**. This is the way to get the full
+Google-account experience while staying on plain Chromium.
+
+### One-time: enable Google sign-in (automatable)
+
+```bash
+omarchy-install-chromium-google-account
+```
+
+Appends `--oauth2-client-id=…` / `--oauth2-client-secret=…` to
+`~/.config/chromium-flags.conf`. Idempotent — safe to re-run; it only adds lines
+that aren't already there. Requires `~/.config/chromium-flags.conf` to exist,
+which it does on a normal Omarchy install.
+
+### One-time: sign in (interactive — can't be a migration)
+
+1. Fully quit Chromium so it re-reads the flags: `killall chromium`
+2. Reopen → **profile icon** (top-right) → **Turn on sync…** → sign in with the
+   same Google account you used on Windows.
+3. Verify at `chrome://settings/payments` — saved cards appear and autofill at
+   checkout (first sync can take a minute).
+
+### Notes / gotchas
+
+| Thing you'll see | Meaning |
+|------------------|---------|
+| Banner: "browser isn't managed by Google" / "sync may be unavailable" | Normal for Chromium — sign-in and sync still work. |
+| Checkout still prompts for the card **CVC** | Expected for Google-account cards (same as Chrome), not a misconfig. |
+| Helper prints nothing / no effect | `~/.config/chromium-flags.conf` is missing — create it (or reinstall Chromium), then re-run. |
+
+Verify the credentials are present:
+
+```bash
+grep oauth2-client ~/.config/chromium-flags.conf
+```
+
+> Not yet captured as a migration — the helper is a built-in Omarchy command run
+> by hand. If you want it reproducible on a fresh install, add a migration that
+> runs `omarchy-install-chromium-google-account` and points here for the sign-in
+> step.
+
+---
+
 ## Adding a new local-setup step
 
 When you add a migration that depends on a secret or interactive step:
