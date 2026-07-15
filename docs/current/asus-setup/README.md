@@ -4,20 +4,43 @@ Hardware-specific notes for getting Omarchy running well on this ASUS
 VivoBook. Kept separate from `migrations/` because this is
 troubleshooting/reference material, not a repeatable install step.
 
-## Status: WiFi working but episodically unstable, Bluetooth not (updated 2026-07-11)
+## Status: RESOLVED 2026-07-15 — swapped the MT7902 for an Intel AX210
 
-WiFi is up via the `morrownr/mt76` driver — see "The fix that worked" below,
-plus later gotchas: the TX-power clamp, an intermittent no-DHCP-after-boot
-wedge, and (2026-07-11) **episodic 5GHz channel collapse** traced to
-co-channel congestion — see that section for the diagnosis and what was
-ruled out. Bluetooth has **never** worked on
-this install and is not fixable by driver fiddling — see the Bluetooth
-section for why and for the paths to getting it (a BT-only USB dongle was
-ordered 2026-07-11). The trackpad occasionally
-dies mid-session — **do not suspend while it's dead**, that hangs the whole
-machine; see the trackpad section.
+WiFi **and Bluetooth** both work now, on the stock in-kernel `iwlwifi` +
+`btusb` stack, after **physically replacing the MediaTek MT7902 M.2 card with
+an Intel AX210** (`8086:2725`) — the "Hardware exit" section below is what was
+actually done. The kernel detects `Intel(R) Wi-Fi 6E AX210` and loads
+`ty-a0-gf-a0-*.ucode` from `linux-firmware`; the wifi MAC is now Intel
+(`5c:67:83:…`), the interface is still `wlan0`, and **Bluetooth enumerates for
+the first time on this machine** (`Controller … [default]`).
+
+Everything below about the `morrownr/mt76` driver, the TX-power/CLC clamp, the
+no-DHCP-after-boot wedge, and the episodic channel collapse is now
+**historical reference** — kept because the diagnosis is useful, but no longer
+the live setup.
+
+Cleanup performed right after the swap (2026-07-15):
+```bash
+sudo dkms remove mt76/1.0 --all             # drop the out-of-tree driver
+sudo rm /etc/modprobe.d/mt76_git.conf       # remove blacklist + disable_clc
+sudo limine-mkinitcpio                      # rebuild the UKI — NOT `mkinitcpio -P`!
+                                            # Omarchy uses Limine + a Unified Kernel
+                                            # Image; `mkinitcpio -P` finds no presets.
+                                            # `limine-update` also works.
+```
+Kept: migration 13 (power-save off) — driver-agnostic. Retired: migration 16
+(mt7921 CLC) — deleted from the repo, MediaTek-only and now dead.
+
+The trackpad still occasionally dies mid-session — **do not suspend (nor close
+the lid, which suspends it) while it's dead**, that hangs the whole machine;
+see the trackpad section. Unaffected by the wifi swap.
 
 ## After future Omarchy/pacman updates
+
+> **⚠️ OBSOLETE since the 2026-07-15 AX210 swap.** There's no longer a
+> `morrownr/mt76` DKMS module to carry across kernel bumps — `iwlwifi` is
+> in-kernel and updates with the kernel automatically. The `dkms status` dance
+> below no longer applies. Kept for history.
 
 `morrownr/mt76` registers properly via `dkms add/build/install`, so Arch's
 `dkms` package pacman hook auto-rebuilds it whenever `linux-headers` gets
@@ -316,7 +339,8 @@ Decision notes from 2026-07-11, when the fighting got old:
   (what AX210 also uses); if they're the older U.FL/MHF1 you'd need cheap
   adapter pigtails. Buy a genuine `AX210NGW` (fakes exist). Confidence is now
   ~98%, not 100% only because of (a)/(b) above.
-  After the swap: `sudo dkms remove mt76/1.0 --all`.
+  ✅ **This is the route taken (2026-07-15).** See the Status section at the
+  top for the exact swap + cleanup commands (incl. `limine-mkinitcpio`).
   **Where to buy (DK, checked 2026-07-11):** Proshop stocks the correct bare
   **M.2 2230 "Without vPro"** card for ~100 kr incl. VAT (genuine — reputable
   retailer; get the non-vPro, vPro is irrelevant here). Compumail also carries
@@ -403,7 +427,7 @@ here can't be mistaken for a driver-swap failure.
 sudo dkms remove mt76/1.0 --all                          # drop out-of-tree driver
 sudo rm /etc/modprobe.d/mt76_git.conf                    # remove blacklist + disable_clc
 sudo rm /etc/udev/rules.d/81-wifi-powersave-off.rules    # migration 13 (see table)
-sudo mkinitcpio -P                                       # flush any baked-in blacklist
+sudo limine-mkinitcpio                                   # rebuild UKI (Omarchy=Limine+UKI; NOT `mkinitcpio -P`)
 sudo reboot
 ```
 
