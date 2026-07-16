@@ -78,6 +78,33 @@ patch -p1 < .../i2c-hid-polling/polling-mode.patch
 sed -i 's#\.\./hid-ids.h#hid-ids.h#' i2c-hid-core.c i2c-hid-dmi-quirks.c
 ```
 
+## Config-only prevention (investigated 2026-07-16 — unproven, future work)
+
+Web research points at the mechanism being the long-known **pinctrl-amd
+level-triggered IRQ bug**: the touchpad holds its GPIO level-low to signal
+data, but pinctrl-amd stops re-firing the threaded/oneshot handler (an EOI
+isn't sent at the right point), so input stalls silently. That matches our
+symptoms exactly (IRQ 80 frozen, chip alive on the bus, nothing logged). It's
+been patched kernel-side over the years (`IRQCHIP_EOI_THREADED`, honoring the
+BIOS trigger type), so its persistence on 7.0 is likely a residual/variant.
+
+The only **no-compiled-module** candidate that could eventually replace this
+DKMS module is disabling the touchpad's runtime-PM autosuspend — some i2c-hid
+touchpads wedge across a PM suspend/resume transition:
+
+    # /etc/udev/rules.d/99-i2c-hid-no-autosuspend.rules
+    ACTION=="add", SUBSYSTEM=="i2c", KERNEL=="i2c-ASUP1303:00", ATTR{power/control}="on"
+
+**Status: hypothesis only.** It's a general i2c-hid mitigation, not proven
+against this AMD pinctrl-amd wedge, and the community threads found no
+config-only fix (their "workaround" is just a module reload, which doesn't
+even recover our stickier wedge). Worse, it can't be validated cheaply now:
+polling mode has *removed* the symptom, so testing means reverting to the
+stock interrupt driver + this rule and daily-driving for a week to see if it
+still wedges — reintroducing the risk we just eliminated. So: only try it
+opportunistically, e.g. during a future kernel re-port, as an A/B before
+deciding whether to drop this module.
+
 ## Honest robustness note
 
 A full-driver-fork DKMS module is the *pragmatic* fix, not the most robust
