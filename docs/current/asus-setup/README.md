@@ -31,9 +31,10 @@ sudo limine-mkinitcpio                      # rebuild the UKI — NOT `mkinitcpi
 Kept: migration 13 (power-save off) — driver-agnostic. Retired: migration 16
 (mt7921 CLC) — deleted from the repo, MediaTek-only and now dead.
 
-The trackpad still occasionally dies mid-session — **do not suspend (nor close
-the lid, which suspends it) while it's dead**, that hangs the whole machine;
-see the trackpad section. Unaffected by the wifi swap.
+The trackpad mid-session death is **fixed as of 2026-07-16** — root cause was
+a wedged `pinctrl_amd` GPIO interrupt (not a power issue), worked around with
+a custom i2c-hid polling-mode DKMS module. See the trackpad section. (Suspend
+in polling mode is not yet re-tested — see "Still to verify" there.)
 
 ## After future Omarchy/pacman updates
 
@@ -503,59 +504,93 @@ support gap, same story as the wifi side was.
 3. **USB BT dongle** — zero-effort fallback; any Realtek/CSR one works out
    of the box.
 
-## Trackpad dies mid-session — and takes suspend down with it
+## Trackpad dies mid-session — SOLVED with i2c-hid polling mode
 
-Seen three times, most recently 2026-07-16: the trackpad — PixArt `093A:3003`, ACPI
-`ASUP1303:00`, an I2C-HID device on the AMD I2C controller
-(`AMDI0010:03`) — stops responding mid-session. The controller chip wedges
-on the I2C bus and, like the Bluetooth chip, keeps standby power through
-soft resets, so once wedged it stays wedged until real power removal.
+**Status: fixed 2026-07-16.** Root cause found; a permanent workaround is in
+place. The earlier "chip holds standby power, needs a cold poweroff" theory
+(kept at the end for the record) was **wrong**.
 
-The dangerous part: **suspending while the trackpad is dead hangs the
-entire machine** — screen off, no response, only holding the power button
-gets you out. Suspend is cooperative: the kernel asks every device to
-sleep, and the i2c-hid sleep command to the wedged chip never completes,
-so s2idle entry stalls partway through. Confirmed in both directions:
-both total-hang incidents were suspends attempted with a dead trackpad,
-and **suspend works fine when the trackpad is healthy** (the earlier
-"suspend is just broken on this laptop" conclusion was wrong).
+### What actually happens
 
-Recovery when the trackpad dies, in order:
+The trackpad — PixArt `093A:3003`, ACPI `ASUP1303:00`, an I2C-HID device on
+the AMD I2C controller (`AMDI0010:03`) — stops sending input mid-session.
+Confirmed diagnosis:
 
-1. Driver rebind — **tested 2026-07-16, does _not_ recover a wedged chip.**
-   Free and harmless to try, but the reload's reset command times out
-   (`i2c_hid_acpi i2c-ASUP1303:00: device did not ack reset within 1000 ms`):
-   the driver re-enumerates fresh input nodes but the chip never answers, so
-   the cursor stays dead. Confirms the earlier "may not help if the chip
-   itself needs power cut" guess.
-   ```bash
-   sudo modprobe -r i2c_hid_acpi && sudo modprobe i2c_hid_acpi
-   ```
-2. Full shutdown → power on. This is what has worked every time. (A warm
-   `reboot` may not cut the chip's standby power — untested.)
-3. **Never suspend as a recovery step.**
+- **The chip stays alive on the I2C bus; only its GPIO interrupt dies.** The
+  touchpad's IRQ is 80, delivered by `amd_gpio` (pin 16) via `pinctrl_amd`
+  (see `grep ASUP1303 /proc/interrupts`). When it wedges, that count stops
+  incrementing even while you drag on the pad — the interrupt is never
+  delivered.
+- **Proof the chip is fine:** a driver rebind logs `device did not ack reset
+  within 1000 ms`. That fires *after* the reset command is successfully
+  written over I2C (the chip ACKs the bus writes); the driver then waits for
+  the chip's *interrupt* to confirm, and that's what never comes. A dead chip
+  would instead fail the earlier I2C write with a NAK/`-ENXIO`. So: bus ✅,
+  interrupt ❌.
+- Otherwise silent — no IRQ storm, no `nobody cared`, no `pinctrl_amd`
+  complaint. A known `pinctrl_amd` GPIO-interrupt failure mode on AMD laptops.
 
-Evidence captured 2026-07-16, two findings:
+### The fix: poll the touchpad instead of using its interrupt
 
-- **The wedge is silent.** While the trackpad is dead the kernel log shows
-  *nothing* — no IRQ storm, no `pinctrl_amd` complaint, no i2c error. The
-  device stays enumerated (`/proc/bus/input/devices` still lists it); it just
-  stops sending data. This weakens the earlier `pinctrl_amd` interrupt-storm
-  theory — a failed IRQ line would log something.
-- **The chip's I2C reset is what's stuck.** The only error appears when you
-  *poke* the chip: the rebind above triggers `device did not ack reset within
-  1000 ms`. Same fingerprint as the suspend hang — on suspend, i2c-hid sends
-  the chip a sleep command that is never acked and s2idle waits forever → total
-  hang. A rebind survives it only because the driver gives up after 1000 ms;
-  suspend has no such timeout.
+i2c-hid can read the device on a timer instead of waiting for the dead
+interrupt. Mainline 7.0 `i2c_hid` has no polling option, and the community
+DKMS modules (`coiby/standalone_i2c_hid`, 2021) don't build past ~5.10
+(`platform_data/i2c-hid.h` was removed). So we took the **7.0 kernel's own
+i2c-hid source**, added a `polling_mode` module param, and package it via
+DKMS. Loading it live — no reboot, no power cycle — brings a wedged pad
+straight back:
 
-Next avenue for a real fix (instead of power-cycling): an i2c-hid quirk to
-force IRQ-polling / skip the reset handshake, or an ACPI/firmware look at why
-the PixArt chip drops off the bus mid-session. To capture more next time:
+    i2c_hid_acpi i2c-ASUP1303:00: polling mode enabled (8 ms); IRQ 80 bypassed
+
+- Source + DKMS packaging: `/usr/src/i2c-hid-polling-7.0/` (first built in
+  `/tmp/i2chid-port`). Builds `i2c-hid.ko` + `i2c-hid-acpi.ko` into
+  `updates/`, which depmod prefers over the in-tree drivers.
+- Polling enabled at boot by `/etc/modprobe.d/i2c-hid-polling.conf`:
+  `options i2c_hid polling_mode=1 polling_interval_ms=8`
+- Not in the initramfs/UKI (`MODULES=()`, not on the root path), so **no
+  `mkinitcpio` rebuild needed** — udev loads the `updates/` version with the
+  param at boot.
+
+Install steps: `dkms add/build/install -m i2c-hid-polling -v 7.0` after
+copying the sources into `/usr/src/i2c-hid-polling-7.0/`.
+
+### If the pad ever wedges again (e.g. after a failed DKMS rebuild)
+
+With polling, reloading the driver recovers it live — no reboot:
 
 ```bash
-journalctl -k | grep -iE 'i2c_hid|ASUP1303|pinctrl|irq'
+sudo rmmod i2c_hid_acpi i2c_hid
+sudo insmod /usr/src/i2c-hid-polling-7.0/i2c-hid.ko polling_mode=1 polling_interval_ms=8
+sudo insmod /usr/src/i2c-hid-polling-7.0/i2c-hid-acpi.ko
 ```
+
+The old advice (full shutdown, never suspend, rebind won't help) applied only
+to the stock interrupt-driven driver. A cold boot still works but is no longer
+necessary.
+
+### Still to verify
+
+**Suspend in polling mode is untested.** It *should* be safe now — there's no
+dead IRQ to stall s2idle, and the sleep path is a plain I2C write — but the
+earlier total-hangs were suspends attempted with a dead pad, so test suspend
+once deliberately (lid closed, ready to power-hold) before trusting it.
+
+### Maintenance caveat
+
+The DKMS package ships a full copy of the 7.0 i2c-hid driver, so a major
+kernel bump (7.1+) may break the rebuild if the driver's internals changed.
+If `dkms status i2c-hid-polling` shows it missing/broken after a kernel
+update, boot falls back to the stock interrupt driver and the wedge returns —
+re-port the polling patch onto the new source (and check whether upstream
+fixed the `pinctrl_amd` bug by then, which would let us drop this module).
+
+### The old (wrong) power-wedge theory — kept for the record
+
+Before the IRQ diagnosis, the theory was that the chip held standby power
+through soft resets and needed a real power cut, and that a rebind couldn't
+help. The suspend-hang observations were real, but "needs power removal" was
+wrong: the chip was reachable on the bus the whole time; only the interrupt
+was dead. Polling sidesteps it entirely.
 
 ## What we tried first (didn't work, kept for reference)
 
