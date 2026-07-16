@@ -505,7 +505,7 @@ support gap, same story as the wifi side was.
 
 ## Trackpad dies mid-session — and takes suspend down with it
 
-Seen twice as of 2026-07-11: the trackpad — PixArt `093A:3003`, ACPI
+Seen three times, most recently 2026-07-16: the trackpad — PixArt `093A:3003`, ACPI
 `ASUP1303:00`, an I2C-HID device on the AMD I2C controller
 (`AMDI0010:03`) — stops responding mid-session. The controller chip wedges
 on the I2C bus and, like the Bluetooth chip, keeps standby power through
@@ -522,26 +522,40 @@ and **suspend works fine when the trackpad is healthy** (the earlier
 
 Recovery when the trackpad dies, in order:
 
-1. Driver rebind — free, takes seconds (untested so far, may not help if
-   the chip itself needs power cut):
+1. Driver rebind — **tested 2026-07-16, does _not_ recover a wedged chip.**
+   Free and harmless to try, but the reload's reset command times out
+   (`i2c_hid_acpi i2c-ASUP1303:00: device did not ack reset within 1000 ms`):
+   the driver re-enumerates fresh input nodes but the chip never answers, so
+   the cursor stays dead. Confirms the earlier "may not help if the chip
+   itself needs power cut" guess.
    ```bash
    sudo modprobe -r i2c_hid_acpi && sudo modprobe i2c_hid_acpi
    ```
-2. Full shutdown → power on. This is what has worked both times. (A warm
+2. Full shutdown → power on. This is what has worked every time. (A warm
    `reboot` may not cut the chip's standby power — untested.)
 3. **Never suspend as a recovery step.**
 
-Root cause not yet investigated. Next time it dies, before rebooting,
-capture the evidence:
+Evidence captured 2026-07-16, two findings:
+
+- **The wedge is silent.** While the trackpad is dead the kernel log shows
+  *nothing* — no IRQ storm, no `pinctrl_amd` complaint, no i2c error. The
+  device stays enumerated (`/proc/bus/input/devices` still lists it); it just
+  stops sending data. This weakens the earlier `pinctrl_amd` interrupt-storm
+  theory — a failed IRQ line would log something.
+- **The chip's I2C reset is what's stuck.** The only error appears when you
+  *poke* the chip: the rebind above triggers `device did not ack reset within
+  1000 ms`. Same fingerprint as the suspend hang — on suspend, i2c-hid sends
+  the chip a sleep command that is never acked and s2idle waits forever → total
+  hang. A rebind survives it only because the driver gives up after 1000 ms;
+  suspend has no such timeout.
+
+Next avenue for a real fix (instead of power-cycling): an i2c-hid quirk to
+force IRQ-polling / skip the reset handshake, or an ACPI/firmware look at why
+the PixArt chip drops off the bus mid-session. To capture more next time:
 
 ```bash
 journalctl -k | grep -iE 'i2c_hid|ASUP1303|pinctrl|irq'
 ```
-
-Prime suspect on these AMD platforms: a GPIO interrupt issue
-(`pinctrl_amd`) killing the touchpad's interrupt line. With that log we
-could pursue a real fix (IRQ polling mode, GPIO quirk) instead of
-power-cycling.
 
 ## What we tried first (didn't work, kept for reference)
 
