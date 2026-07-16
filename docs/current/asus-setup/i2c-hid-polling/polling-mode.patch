@@ -1,0 +1,178 @@
+--- a/drivers/hid/i2c-hid/i2c-hid-core.c
++++ b/drivers/hid/i2c-hid/i2c-hid-core.c
+@@ -72,6 +72,17 @@
+ 
+ #define i2c_hid_dbg(ihid, ...) dev_dbg(&(ihid)->client->dev, __VA_ARGS__)
+ 
++/* Polling-mode workaround (out-of-tree): bypass a wedged GPIO IRQ line. */
++static bool polling_mode;
++module_param(polling_mode, bool, 0444);
++MODULE_PARM_DESC(polling_mode,
++	"Poll the device instead of using its interrupt (workaround for a wedged GPIO IRQ)");
++
++static unsigned int polling_interval_ms = 10;
++module_param(polling_interval_ms, uint, 0644);
++MODULE_PARM_DESC(polling_interval_ms,
++	"Polling interval in milliseconds when polling_mode=1 (default 10)");
++
+ struct i2c_hid_desc {
+ 	__le16 wHIDDescLength;
+ 	__le16 bcdVersion;
+@@ -107,6 +118,9 @@
+ 
+ 	wait_queue_head_t	wait;		/* For waiting the interrupt */
+ 
++	struct delayed_work	poll_work;	/* polling-mode input poll */
++	bool			polling_active;	/* keep the poll loop running */
++
+ 	struct mutex		cmd_lock;	/* protects cmdbuf and rawbuf */
+ 	struct mutex		reset_lock;
+ 
+@@ -503,7 +517,7 @@
+ 
+ 	i2c_hid_dbg(ihid, "%s: waiting...\n", __func__);
+ 
+-	if (ihid->quirks & I2C_HID_QUIRK_NO_IRQ_AFTER_RESET) {
++	if (polling_mode || (ihid->quirks & I2C_HID_QUIRK_NO_IRQ_AFTER_RESET)) {
+ 		msleep(100);
+ 		clear_bit(I2C_HID_RESET_PENDING, &ihid->flags);
+ 	} else if (!wait_event_timeout(ihid->wait,
+@@ -591,6 +605,48 @@
+ 	return IRQ_HANDLED;
+ }
+ 
++static void i2c_hid_poll_work(struct work_struct *work)
++{
++	struct i2c_hid *ihid = container_of(to_delayed_work(work),
++					    struct i2c_hid, poll_work);
++
++	i2c_hid_get_input(ihid);
++
++	if (READ_ONCE(ihid->polling_active))
++		schedule_delayed_work(&ihid->poll_work,
++				      msecs_to_jiffies(polling_interval_ms));
++}
++
++static void i2c_hid_enable_irq_or_poll(struct i2c_hid *ihid)
++{
++	if (polling_mode) {
++		WRITE_ONCE(ihid->polling_active, true);
++		schedule_delayed_work(&ihid->poll_work, 0);
++	} else {
++		enable_irq(ihid->client->irq);
++	}
++}
++
++static void i2c_hid_disable_irq_or_poll(struct i2c_hid *ihid)
++{
++	if (polling_mode) {
++		WRITE_ONCE(ihid->polling_active, false);
++		cancel_delayed_work_sync(&ihid->poll_work);
++	} else {
++		disable_irq(ihid->client->irq);
++	}
++}
++
++static void i2c_hid_free_irq_or_poll(struct i2c_hid *ihid)
++{
++	if (polling_mode) {
++		WRITE_ONCE(ihid->polling_active, false);
++		cancel_delayed_work_sync(&ihid->poll_work);
++	} else {
++		free_irq(ihid->client->irq, ihid);
++	}
++}
++
+ static int i2c_hid_get_report_length(struct hid_report *report)
+ {
+ 	return ((report->size - 1) >> 3) + 1 +
+@@ -819,11 +875,11 @@
+ 	i2c_hid_find_max_report(hid, HID_FEATURE_REPORT, &bufsize);
+ 
+ 	if (bufsize > ihid->bufsize) {
+-		disable_irq(client->irq);
++		i2c_hid_disable_irq_or_poll(ihid);
+ 		i2c_hid_free_buffers(ihid);
+ 
+ 		ret = i2c_hid_alloc_buffers(ihid, bufsize);
+-		enable_irq(client->irq);
++		i2c_hid_enable_irq_or_poll(ihid);
+ 
+ 		if (ret)
+ 			return ret;
+@@ -870,6 +926,14 @@
+ 	unsigned long irqflags = 0;
+ 	int ret;
+ 
++	if (polling_mode) {
++		INIT_DELAYED_WORK(&ihid->poll_work, i2c_hid_poll_work);
++		dev_info(&client->dev,
++			 "polling mode enabled (%u ms); IRQ %d bypassed\n",
++			 polling_interval_ms, client->irq);
++		return 0;
++	}
++
+ 	i2c_hid_dbg(ihid, "Requesting IRQ: %d\n", client->irq);
+ 
+ 	if (!irq_get_trigger_type(client->irq))
+@@ -984,7 +1048,7 @@
+ 	if (!(ihid->quirks & I2C_HID_QUIRK_NO_SLEEP_ON_SUSPEND))
+ 		i2c_hid_set_power(ihid, I2C_HID_PWR_SLEEP);
+ 
+-	disable_irq(client->irq);
++	i2c_hid_disable_irq_or_poll(ihid);
+ 
+ 	if (force_poweroff || !device_may_wakeup(&client->dev))
+ 		i2c_hid_core_power_down(ihid);
+@@ -1001,7 +1065,7 @@
+ 	if (!device_may_wakeup(&client->dev))
+ 		i2c_hid_core_power_up(ihid);
+ 
+-	enable_irq(client->irq);
++	i2c_hid_enable_irq_or_poll(ihid);
+ 
+ 	/* On Goodix 27c6:0d42 wait extra time before device wakeup.
+ 	 * It's not clear why but if we send wakeup too early, the device will
+@@ -1078,13 +1142,13 @@
+ 	struct hid_device *hid = ihid->hid;
+ 	int ret;
+ 
+-	enable_irq(client->irq);
++	i2c_hid_enable_irq_or_poll(ihid);
+ 
+ 	ret = hid_add_device(hid);
+ 	if (ret) {
+ 		if (ret != -ENODEV)
+ 			hid_err(client, "can't add hid device: %d\n", ret);
+-		disable_irq(client->irq);
++		i2c_hid_disable_irq_or_poll(ihid);
+ 		return ret;
+ 	}
+ 
+@@ -1309,7 +1373,7 @@
+ 	return 0;
+ 
+ err_free_irq:
+-	free_irq(client->irq, ihid);
++	i2c_hid_free_irq_or_poll(ihid);
+ err_power_down:
+ 	if (!ihid->is_panel_follower)
+ 		i2c_hid_core_power_down(ihid);
+@@ -1339,7 +1403,7 @@
+ 	hid = ihid->hid;
+ 	hid_destroy_device(hid);
+ 
+-	free_irq(client->irq, ihid);
++	i2c_hid_free_irq_or_poll(ihid);
+ 
+ 	if (ihid->bufsize)
+ 		i2c_hid_free_buffers(ihid);
+@@ -1351,7 +1415,7 @@
+ 	struct i2c_hid *ihid = i2c_get_clientdata(client);
+ 
+ 	i2c_hid_set_power(ihid, I2C_HID_PWR_SLEEP);
+-	free_irq(client->irq, ihid);
++	i2c_hid_free_irq_or_poll(ihid);
+ 
+ 	i2c_hid_core_shutdown_tail(ihid);
+ }
