@@ -57,6 +57,21 @@ real unit.
 3. **Time-fixes-it:** a DMI quirk + UCM profile lands upstream (the speaker quirk
    already exists out-of-tree; mic likely follows the same route).
 
+## Open question posted (2026-07-24) — awaiting answer
+
+Asked directly on Yiin's gist (as `mkelk`, comment id `6273884`) whether the
+internal mic works after the SoundWire quirk, requesting `arecord -l` /
+`wpctl status` evidence:
+https://gist.github.com/Yiin/8308c3ba6e5badab1098a7378f9f807f
+
+@-mentioned **P4r4d0x42**, who confirmed in an earlier comment (2026-07-17)
+that they run the **exact GA model** (UM5606GA-ZB, Ryzen AI 9 465) with the
+quirk applied — note their tip: the setup script needed `KREF=v7.0 ./setup.sh`
+on kernel 7.0 due to a kernel-structure mismatch.
+
+Replies land in GitHub notifications (commenting auto-subscribes). **When
+answered, record the verdict here** and update the TL;DR + README accordingly.
+
 ## Pre-purchase verification checklist (on a real/store unit, live USB)
 
 ```bash
