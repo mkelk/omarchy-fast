@@ -21,9 +21,11 @@ recommends (it deprecated the old `xrdp → wayvnc` bridge in favour of it).
 
 - **Server** (omarchy-dell): `hypr-rdp`, autostarted with the Hyprland session,
   bound to the **Tailscale IP only**, password from the login keyring.
-- **Client** (omarchy-asus): an `omarchy-dell` command (mirror of
-  `omarchy-fw16-windows`) driving `xfreerdp3` — fullscreen, H.264, `/sound`,
-  `+clipboard`, `/dynamic-resolution`, keyring password, Walker launcher.
+- **Client** (omarchy-asus): an `omarchy-dell` command driving the **native
+  Wayland** client `sdl-freerdp3` — H.264, `/sound`, `+clipboard`,
+  `/dynamic-resolution`, keyring password, Walker launcher, fullscreened via
+  Hyprland. (Started from the `xfreerdp3`/XWayland mirror of `omarchy-fw16-windows`,
+  but XWayland can't take Wayland keyboard focus under Hyprland — see Keyboard below.)
 
 Because both ends sit on the tailnet, connect to `100.116.131.117:3389` from
 anywhere; no port is ever exposed to the LAN or internet.
@@ -70,12 +72,12 @@ consistent and boring.
 ## What the migrations do
 
 **`0000000020_install_omarchy_dell_rdp.sh` (client, runs on omarchy-asus):**
-- Ensures `freerdp` is installed (already present here).
-- Writes `~/.local/bin/omarchy-dell` (+ `dell` alias) — `xfreerdp3` to
-  `100.116.131.117` (`--lan` → `192.168.68.51`), fullscreen by default
-  (`--windowed` to opt out), `/gfx:AVC444 /sound /microphone +clipboard
+- Ensures `freerdp` is installed (provides `sdl-freerdp3`; already present here).
+- Writes `~/.local/bin/omarchy-dell` (+ `dell` alias) — `sdl-freerdp3` to
+  `100.116.131.117` (`--lan` → `192.168.68.51`), `/gfx:AVC444 /sound +clipboard
   /dynamic-resolution /network:lan +auto-reconnect`, password from keyring service
-  `omarchy-dell`.
+  `omarchy-dell`. Runs **windowed** at the focused monitor's pixel size, then
+  Hyprland-fullscreens the window (`--windowed` to opt out).
 - Adds a Walker `.desktop` launcher (absolute path — Walker's uwsm PATH excludes
   `~/.local/bin`).
 - Detects a missing keyring password and prints the one-time `secret-tool` step.
@@ -134,6 +136,15 @@ Or launch **omarchy-dell (RDP)** from Super+Space.
 
 ## Notes / gotchas
 
+- **Keyboard / why the Wayland client:** the XWayland client (`xfreerdp3`) displays
+  fine but never receives Wayland keyboard focus under Hyprland, so every keystroke
+  (even after focusing/fullscreening) leaked to the local compositor. `sdl-freerdp3`
+  is a **native Wayland** window, so Hyprland delivers it keyboard focus and typing
+  reaches the remote. Trade-off: local **SUPER shortcuts stay local** (they're not
+  forwarded), which doubles as a foolproof escape — you can never get trapped.
+- **No `/f` on the SDL client:** its own fullscreen mis-probes the monitor as 96×96
+  under Wayland **fractional scaling** (asus is 1.25/1.5) and pre-connect fails. We
+  run windowed at the focused monitor's pixel size and fullscreen via `hyprctl`.
 - **hypr-rdp maturity:** young project (Rust, MIT, ~100 commits). It's the right,
   purpose-built tool, but if it regresses, **wayvnc + Tailscale** is the reliable
   fallback (see the acrogenesis Omarchy guide).

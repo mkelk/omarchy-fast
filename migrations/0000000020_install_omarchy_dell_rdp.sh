@@ -36,10 +36,13 @@ cat > "$HOME/.local/bin/omarchy-dell" <<'CMD'
 #   omarchy-dell                 connect fullscreen over Tailscale (works anywhere)
 #   omarchy-dell --lan           force the home-LAN IP instead of the tailnet IP
 #   omarchy-dell --windowed      open in a resizable window instead of fullscreen
-#   omarchy-dell -- <args>       everything after -- passes through to xfreerdp3
+#   omarchy-dell -- <args>       everything after -- passes through to sdl-freerdp3
 #   DELL_USER=melk omarchy-dell  override the remote username for one run
 #
-# Fullscreen toggle while connected: Ctrl+Alt+Enter.
+# Uses the native Wayland client (sdl-freerdp3) so Hyprland delivers keyboard focus
+# and your typing reaches the remote. The window is fullscreened via Hyprland; your
+# LOCAL SUPER shortcuts keep working, so there's nothing to "release" — SUPER+F to
+# un-fullscreen, switch workspace, or SUPER+W to close.
 #
 # One-time password setup (must match the password hypr-rdp runs with on the dell):
 #   secret-tool store --label="omarchy-dell RDP" service omarchy-dell
@@ -51,7 +54,6 @@ set -euo pipefail
 USER_DEFAULT="melk"                          # omarchy-dell local account
 HOST_TS="100.116.131.117"                    # omarchy-dell tailnet IP (works anywhere)
 HOST_LAN="192.168.68.51"                     # home LAN IP (fallback for --lan)
-SCALE="100"                                  # HiDPI scaling: 100 / 140 / 180
 GFX="AVC444"                                 # H.264 mode: AVC444 (best) / AVC420 / RFX
 SECRET_SERVICE="omarchy-dell"                # gnome-keyring entry holding the RDP password
 # ---------------------------------------------------------------------------
@@ -61,7 +63,7 @@ USER_NAME="${DELL_USER:-$USER_DEFAULT}"
 HOST="$HOST_TS"
 FULLSCREEN="/f"
 
-# Parse our own flags; collect the rest for xfreerdp3 (everything after -- too).
+# Parse our own flags; collect the rest for sdl-freerdp3 (everything after -- too).
 EXTRA=()
 passthrough=0
 for a in "$@"; do
@@ -84,15 +86,23 @@ fi
 
 echo ">> connecting to omarchy-dell ($HOST) as $USER_NAME"
 
-# Once the FreeRDP window maps, focus + fullscreen it in Hyprland. FreeRDP only
-# grabs the keyboard (forwarding ALL keys, incl. SUPER, to the remote) when its
-# window is focused; a tiled/unfocused window leaks every keystroke to the local
-# compositor. Skipped with --windowed. Release the grab in-session with Right CTRL.
+# sdl-freerdp3's OWN fullscreen (/f) mis-probes the monitor under Wayland
+# fractional scaling (reads it as 96x96 -> pre-connect fails), so run WINDOWED at
+# the focused monitor's pixel size and let Hyprland fullscreen the native Wayland
+# window instead (below). Fall back to 1920x1080 if the geometry can't be read.
+GEO_W=$(hyprctl monitors -j 2>/dev/null | jq -r '[.[]|select(.focused)][0].width' 2>/dev/null)
+GEO_H=$(hyprctl monitors -j 2>/dev/null | jq -r '[.[]|select(.focused)][0].height' 2>/dev/null)
+case "$GEO_W" in ''|null|*[!0-9]*) GEO_W=1920 ;; esac
+case "$GEO_H" in ''|null|*[!0-9]*) GEO_H=1080 ;; esac
+
+# Once the native Wayland window maps, focus + fullscreen it in Hyprland so keys
+# reach the remote. Skipped with --windowed.
 if [ -n "$FULLSCREEN" ] && command -v hyprctl >/dev/null 2>&1; then
   ( for _ in $(seq 1 40); do
-      addr=$(hyprctl clients 2>/dev/null | awk -v h="FreeRDP: $HOST" '$0 ~ ("^Window .* -> " h) {print $2; exit}')
-      if [ -n "$addr" ]; then
-        hyprctl dispatch focuswindow address:0x"$addr" >/dev/null 2>&1
+      a=$(hyprctl clients -j 2>/dev/null | jq -r '.[]|select(.class=="com.freerdp.client.sdl3")|.address' 2>/dev/null | head -1)
+      if [ -n "$a" ] && [ "$a" != null ]; then
+        hyprctl dispatch focuswindow address:"$a" >/dev/null 2>&1
+        sleep 0.2
         hyprctl dispatch fullscreen 0 >/dev/null 2>&1
         break
       fi
@@ -103,23 +113,23 @@ fi
 # Capture output so we can tell a genuine failure from a normal close. This FreeRDP
 # build raises SIGABRT on teardown even on success, so the exit code is unreliable —
 # decide from the actual error text in the log, not from $?.
+# (Harmless krb5 "Decrypt integrity check failed" lines are the Kerberos attempt
+# before NTLM auth — not a real failure.)
 LOG=$(mktemp -t dell-rdp.XXXXXX)
 set +e
-xfreerdp3 \
+SDL_VIDEODRIVER=wayland sdl-freerdp3 \
   /v:"$HOST" \
   /u:"$USER_NAME" \
   "${PW_ARG[@]}" \
   /cert:ignore \
-  /scale:"$SCALE" \
+  /w:"$GEO_W" /h:"$GEO_H" \
   /gfx:"$GFX" \
   /dynamic-resolution \
   /sound \
-  /microphone \
   +clipboard \
   /network:lan \
   +auto-reconnect \
   /auto-reconnect-max-retries:50 \
-  ${FULLSCREEN:+$FULLSCREEN} \
   "${EXTRA[@]}" 2>&1 | tee "$LOG"
 set -e
 
