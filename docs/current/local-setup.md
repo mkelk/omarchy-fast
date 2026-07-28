@@ -127,7 +127,7 @@ secret-tool clear  service omarchy-dell
 | Everything too small / too big on the client | HiDPI scaling | Edit `~/.local/bin/omarchy-dell`: set `SCALE` to `100`/`140`/`180` |
 | Choppy / high latency | Software encode (missing VA-API driver) or wifi power-save | Confirm `intel-media-driver` on dell (`vainfo`); wifi power-save is disabled by migration 0000000013 |
 | **Sluggish / laggy / trailing cursor** | (1) `wlr` capture stalls every ~2s on Hyprland 0.56; (2) too many frames buffered; (3) heavy codec | Handled by defaults: capture `ext`, `--max-frames-in-flight 2` (server), AVC420 (client). Tune on dell: `RDP_MAX_FRAMES` (1=snappiest but choppy, 2=sweet spot), `RDP_FPS`. The `ext` capture is the big one — check `~/.local/state/hypr-rdp.log` for "frame stalled". |
-| **Remote doesn't fill the screen (margin on right/bottom)** | SDL draws the remote buffer at 1:1 physical px, ignoring the monitor's fractional scale (1.25/1.5) | Fixed by `/smart-sizing` in `omarchy-dell` — scales the remote to fill the window on **any** monitor/scale (works the same on the ultrawide and the laptop-only screen). Don't add `/f` (mis-probes the monitor as 96×96). |
+| **Remote doesn't fill the screen (margin on right/bottom)** | SDL draws the remote buffer at 1:1 logical px, ignoring the monitor's fractional scale (1.25/1.5) | Fixed by `SDL_VIDEO_WAYLAND_SCALE_TO_DISPLAY=1` in `omarchy-dell` (renders at native px so `/dynamic-resolution` requests the full size). Works on **any** monitor/scale. Don't add `/f` (mis-probes monitor as 96×96), and don't combine `/smart-sizing` with `/dynamic-resolution` (FreeRDP3 rejects it: "mutually exclusive"). |
 
 ### Verify from a terminal
 
