@@ -59,8 +59,10 @@ consistent and boring.
 - **Transport:** Tailscale. hypr-rdp binds to `$(tailscale ip -4):3389`, never
   `0.0.0.0`. The tailnet + the RDP password are the entire security model — there
   is no LAN/WAN exposure and no firewall rule to manage.
-- **Capture:** `--capture-mode wlr` (hypr-rdp default). If a future Hyprland drops
-  wlr-screencopy, switch to `ext` (`RDP_CAPTURE=ext`).
+- **Capture:** `--capture-mode ext` (ext-image-copy-capture-v1). hypr-rdp defaults
+  to `wlr`, but wlr-screencopy **stalls every ~2s on Hyprland 0.56** (`WLR frame
+  stalled` in the log → very sluggish), so we default to `ext`. `RDP_CAPTURE=wlr`
+  falls back if needed.
 - **Encode:** VA-API H.264. omarchy-dell is Intel CometLake UHD → `intel-media-driver`
   (iHD). Missing the driver only means slower OpenH264 software encode, not failure.
 - **Session:** hypr-rdp mirrors the **live** output, so you see exactly what's on

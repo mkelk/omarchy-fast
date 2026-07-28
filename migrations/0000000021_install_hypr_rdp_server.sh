@@ -74,7 +74,9 @@ SECRET_SERVICE="hypr-rdp"
 RDP_PORT="${RDP_PORT:-3389}"
 RDP_FPS="${RDP_FPS:-60}"
 RDP_CODEC="${RDP_CODEC:-auto}"
-RDP_CAPTURE="${RDP_CAPTURE:-wlr}"     # switch to "ext" if capture fails on your Hyprland
+RDP_CAPTURE="${RDP_CAPTURE:-ext}"     # ext-image-copy-capture-v1; the older wlr-screencopy
+                                      # path stalls every ~2s on Hyprland 0.56 (sluggish).
+                                      # Set RDP_CAPTURE=wlr to fall back if ext misbehaves.
 RDP_AUDIO="${RDP_AUDIO:-redirect}"
 LOG="${XDG_STATE_HOME:-$HOME/.local/state}/hypr-rdp.log"
 mkdir -p "$(dirname "$LOG")"
