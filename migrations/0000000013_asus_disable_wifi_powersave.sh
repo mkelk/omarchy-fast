@@ -3,6 +3,15 @@ set -eEo pipefail
 
 echo "melk: Disable Wi-Fi power saving (keeps long-lived connections alive on idle links)"
 
+# ── ASUS-ONLY ────────────────────────────────────────────────────────────────
+# This is an ASUS Vivobook (omarchy-asus) hardware tweak — see docs/current/asus-setup/.
+# It is a no-op on any other machine. Guarded so it is SAFE if run elsewhere by
+# accident (e.g. via omarchy-migrate on a Dell/Framework): it just exits cleanly.
+if ! grep -qi asus /sys/class/dmi/id/sys_vendor 2>/dev/null; then
+  echo "Skipping: ASUS-specific migration (this is not an ASUS machine)."
+  exit 0
+fi
+
 # WHY: most Wi-Fi drivers (incl. the FW16/ASUS mt7921e) default to power_save=on.
 # When a link goes quiet the NIC sleeps, which stalls packets for a moment and drops
 # long-lived connections — e.g. the RDP session into win-fw16 dies after a few minutes

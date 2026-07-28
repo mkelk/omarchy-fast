@@ -3,6 +3,15 @@ set -eEo pipefail
 
 echo "melk: Touchpad right-click — corner physical click + two-finger tap"
 
+# ── ASUS-ONLY ────────────────────────────────────────────────────────────────
+# This is an ASUS Vivobook (omarchy-asus) hardware tweak — see docs/current/asus-setup/.
+# It is a no-op on any other machine. Guarded so it is SAFE if run elsewhere by
+# accident (e.g. via omarchy-migrate on a Dell/Framework): it just exits cleanly.
+if ! grep -qi asus /sys/class/dmi/id/sys_vendor 2>/dev/null; then
+  echo "Skipping: ASUS-specific migration (this is not an ASUS machine)."
+  exit 0
+fi
+
 # This machine's touchpad (ASUS Vivobook M1505YA, ASUP1303:00 093A:3003) is a
 # real clickpad: the kernel marks it INPUT_PROP_BUTTONPAD and it emits a
 # physical BTN_LEFT on a hard press (verified with a raw evdev trace). It has
