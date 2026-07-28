@@ -139,9 +139,11 @@ Or launch **omarchy-dell (RDP)** from Super+Space.
 - **Keyboard / why the Wayland client:** the XWayland client (`xfreerdp3`) displays
   fine but never receives Wayland keyboard focus under Hyprland, so every keystroke
   (even after focusing/fullscreening) leaked to the local compositor. `sdl-freerdp3`
-  is a **native Wayland** window, so Hyprland delivers it keyboard focus and typing
-  reaches the remote. Trade-off: local **SUPER shortcuts stay local** (they're not
-  forwarded), which doubles as a foolproof escape — you can never get trapped.
+  is a **native Wayland** window, so Hyprland delivers it keyboard focus. In
+  fullscreen it grabs the keyboard, so **all keys including SUPER** go to the remote
+  Omarchy (the full experience). **Escape hatch: Right Shift + G** toggles the
+  keyboard/mouse grab back to local — a client shortcut, always intercepted locally,
+  so you can never get trapped (`pkill sdl-freerdp3` is the last resort).
 - **No `/f` on the SDL client:** its own fullscreen mis-probes the monitor as 96×96
   under Wayland **fractional scaling** (asus is 1.25/1.5) and pre-connect fails. We
   run windowed at the focused monitor's pixel size and fullscreen via `hyprctl`.

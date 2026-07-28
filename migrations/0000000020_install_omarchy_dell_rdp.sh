@@ -39,10 +39,11 @@ cat > "$HOME/.local/bin/omarchy-dell" <<'CMD'
 #   omarchy-dell -- <args>       everything after -- passes through to sdl-freerdp3
 #   DELL_USER=melk omarchy-dell  override the remote username for one run
 #
-# Uses the native Wayland client (sdl-freerdp3) so Hyprland delivers keyboard focus
-# and your typing reaches the remote. The window is fullscreened via Hyprland; your
-# LOCAL SUPER shortcuts keep working, so there's nothing to "release" — SUPER+F to
-# un-fullscreen, switch workspace, or SUPER+W to close.
+# Uses the native Wayland client (sdl-freerdp3) so Hyprland delivers keyboard focus.
+# In fullscreen it grabs the keyboard, so ALL keys — including SUPER — go to the
+# remote Omarchy. To hand keyboard+mouse back to the LOCAL machine press
+# RIGHT SHIFT + G (toggles the grab); press again to recapture. Ctrl+Alt+Enter
+# toggles fullscreen. Last resort from another terminal: pkill sdl-freerdp3.
 #
 # One-time password setup (must match the password hypr-rdp runs with on the dell):
 #   secret-tool store --label="omarchy-dell RDP" service omarchy-dell
