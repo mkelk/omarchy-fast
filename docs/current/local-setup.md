@@ -65,6 +65,75 @@ omarchy-fw16-windows --lan    # force home-LAN IP
 
 ---
 
+## omarchy-dell — RDP into its Hyprland (`omarchy-dell` + hypr-rdp)
+
+Installed by two migrations: `0000000020_install_omarchy_dell_rdp.sh` (the
+**client** command `omarchy-dell`, on omarchy-asus) and
+`0000000021_install_hypr_rdp_server.sh` (the **hypr-rdp server**, on omarchy-dell).
+Full design: [`../2026-07-28-rdp-into-omarchy-dell.md`](../2026-07-28-rdp-into-omarchy-dell.md).
+
+There is **one shared secret**: the RDP password. It must be stored on *both*
+ends (the server runs hypr-rdp with it; the client sends it). Pick any strong
+password and use the same one in both places.
+
+### One-time on omarchy-dell (server) — activate it as an RDP target
+
+```bash
+secret-tool store --label="hypr-rdp server" service hypr-rdp
+```
+
+Until this is stored, `omarchy-rdp-server` refuses to start (safe default — a
+machine only serves once you opt it in). After storing, either log out/in or run
+inside the Hyprland session:
+
+```bash
+omarchy-rdp-server &        # starts hypr-rdp, bound to the tailnet IP :3389
+```
+
+### One-time on omarchy-asus (client) — save the same password
+
+```bash
+secret-tool store --label="omarchy-dell RDP" service omarchy-dell
+```
+
+Then connect (no prompts): `omarchy-dell` (or `dell`), or launch **omarchy-dell
+(RDP)** from Super+Space.
+
+### Managing / fixing the saved passwords
+
+```bash
+# server (dell): is it stored? re-store? remove?
+secret-tool lookup service hypr-rdp >/dev/null && echo stored || echo missing
+secret-tool store  --label="hypr-rdp server" service hypr-rdp
+secret-tool clear  service hypr-rdp
+
+# client (asus): same three, service name "omarchy-dell"
+secret-tool lookup service omarchy-dell >/dev/null && echo stored || echo missing
+secret-tool store  --label="omarchy-dell RDP" service omarchy-dell
+secret-tool clear  service omarchy-dell
+```
+
+### Symptoms & fixes
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Client window never appears, "Login rejected" | Passwords don't match on the two ends | Re-store the **same** password in both keyrings (above) |
+| "Could not reach …" notification | dell offline, Tailscale down, or hypr-rdp not running | Check `tailscale status`; on dell see the server is up (`pgrep -a hypr-rdp`), or on home wifi try `omarchy-dell --lan` |
+| hypr-rdp on dell exits immediately | No password stored, or launched outside the Hyprland session (no Wayland env) | Store the password; run `omarchy-rdp-server` from a terminal **inside** the session, check `~/.local/state/hypr-rdp.log` |
+| Black screen / capture fails | Hyprland doesn't expose the default capture protocol | On dell: `RDP_CAPTURE=ext omarchy-rdp-server &` (and set `RDP_CAPTURE=ext` in the launcher) |
+| Everything too small / too big on the client | HiDPI scaling | Edit `~/.local/bin/omarchy-dell`: set `SCALE` to `100`/`140`/`180` |
+| Choppy / high latency | Software encode (missing VA-API driver) or wifi power-save | Confirm `intel-media-driver` on dell (`vainfo`); wifi power-save is disabled by migration 0000000013 |
+
+### Verify from a terminal
+
+```bash
+omarchy-dell            # over Tailscale, fullscreen (Ctrl+Alt+Enter toggles)
+omarchy-dell --lan      # force home-LAN IP
+omarchy-dell --windowed # resizable window instead of fullscreen
+```
+
+---
+
 ## Chromium — full Google account (`omarchy-install-chromium-google-account`)
 
 Stock Chromium ships **without** Google's OAuth client credentials, so it can't
