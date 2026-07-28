@@ -118,14 +118,13 @@ fi
 # before NTLM auth — not a real failure.)
 LOG=$(mktemp -t dell-rdp.XXXXXX)
 set +e
-# SDL_VIDEO_WAYLAND_SCALE_TO_DISPLAY=1 makes SDL render at the monitor's native
-# pixels so /dynamic-resolution asks the remote for the FULL physical size and it
-# fills the screen. Without it SDL draws the buffer at 1:1 logical px, leaving a
-# margin under fractional scaling (1.25 ultrawide / 1.5 laptop). This is scale-
-# agnostic -> fills correctly on the external ultrawide AND the laptop-only screen.
-# (NB: /smart-sizing and /dynamic-resolution are mutually exclusive in FreeRDP3 —
-# we use dynamic-resolution so the remote also matches each monitor's aspect.)
-SDL_VIDEODRIVER=wayland SDL_VIDEO_WAYLAND_SCALE_TO_DISPLAY=1 sdl-freerdp3 \
+# Fill strategy: /w /h at the focused monitor's PHYSICAL pixels + /dynamic-resolution.
+# The server resizes its headless output to what the client requests **on connect**,
+# so it adapts to whichever monitor you're on (ultrawide or laptop-only) and fills.
+# Tried and rejected: SCALE_TO_DISPLAY (overshoots -> bottom cut off) and /smart-sizing
+# (mutually exclusive with /dynamic-resolution in FreeRDP3). dynamic-resolution is
+# also what lets the server shrink back down when you reconnect on a smaller screen.
+SDL_VIDEODRIVER=wayland sdl-freerdp3 \
   /v:"$HOST" \
   /u:"$USER_NAME" \
   "${PW_ARG[@]}" \

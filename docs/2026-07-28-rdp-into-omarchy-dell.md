@@ -70,14 +70,15 @@ consistent and boring.
 - **Latency:** `--max-frames-in-flight 2` on the server — few unacknowledged frames
   buffered, so the picture (and cursor) tracks close to real-time. `1` is snappiest
   but choppy; the hypr-rdp default buffers more and feels laggy/trailing.
-- **Display fill:** `/dynamic-resolution` matches the remote to the client window,
-  and **`SDL_VIDEO_WAYLAND_SCALE_TO_DISPLAY=1`** makes SDL render at the monitor's
-  native pixels so the remote is asked for the full physical size and fills the
-  screen. Without it SDL draws at 1:1 logical px and leaves a margin under fractional
-  scaling (1.25 ultrawide / 1.5 laptop). Scale-agnostic → **robust across the
-  ultrawide and the laptop-only screen**, no hardcoded res. (`/smart-sizing` would
-  also fill but is **mutually exclusive** with `/dynamic-resolution` in FreeRDP3, and
-  we want dynamic-resolution so the remote matches each monitor's aspect.)
+- **Display fill:** `/w`/`/h` at the focused monitor's **physical** pixels +
+  `/dynamic-resolution`. The server resizes its headless output to the client's
+  request **on connect**, so it fills whichever monitor you connect from and shrinks
+  back on a smaller one. **Verified filling on both** the ultrawide (3440×1440) and
+  the laptop-only screen (2880×1620), no hardcoded res. Rejected alternatives:
+  `SDL_VIDEO_WAYLAND_SCALE_TO_DISPLAY=1` overshoots (renders bigger than the monitor
+  → bottom cut off); `/smart-sizing` is mutually exclusive with `/dynamic-resolution`
+  in FreeRDP3. Gotcha: back-to-back connects *without* dynamic-resolution leave the
+  server's output "stuck" at the largest size — dynamic-resolution avoids that.
 - **Session:** hypr-rdp serves a **headless output** it creates (doesn't disturb
   dell's physical monitor), sized to the client via `/dynamic-resolution`.
 
@@ -86,10 +87,10 @@ consistent and boring.
 **`0000000020_install_omarchy_dell_rdp.sh` (client, runs on omarchy-asus):**
 - Ensures `freerdp` is installed (provides `sdl-freerdp3`; already present here).
 - Writes `~/.local/bin/omarchy-dell` (+ `dell` alias) — `sdl-freerdp3` to
-  `100.116.131.117` (`--lan` → `192.168.68.51`), `SDL_VIDEO_WAYLAND_SCALE_TO_DISPLAY=1`
-  + `/gfx:AVC420 /dynamic-resolution /sound +clipboard /network:lan +auto-reconnect`,
-  password from keyring service `omarchy-dell`. Runs **windowed** at the focused
-  monitor's pixel size, then Hyprland-fullscreens the window (`--windowed` to opt out).
+  `100.116.131.117` (`--lan` → `192.168.68.51`), `/gfx:AVC420 /dynamic-resolution
+  /sound +clipboard /network:lan +auto-reconnect`, password from keyring service
+  `omarchy-dell`. Runs **windowed** at the focused monitor's physical pixel size,
+  then Hyprland-fullscreens the window (`--windowed` to opt out).
 - Adds a Walker `.desktop` launcher (absolute path — Walker's uwsm PATH excludes
   `~/.local/bin`).
 - Detects a missing keyring password and prints the one-time `secret-tool` step.
