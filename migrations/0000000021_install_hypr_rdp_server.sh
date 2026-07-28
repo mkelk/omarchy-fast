@@ -66,7 +66,7 @@ cat > "$HOME/.local/bin/omarchy-rdp-server" <<'CMD'
 # No password stored => this machine simply doesn't serve (safe default).
 #
 # Tunables (env or edit): RDP_FPS, RDP_CODEC (auto|avc444|avc420),
-# RDP_CAPTURE (wlr|ext), RDP_AUDIO (redirect|mirror|off), RDP_PORT.
+# RDP_CAPTURE (wlr|ext), RDP_AUDIO (redirect|mirror|off), RDP_PORT, RDP_MAX_FRAMES.
 
 set -uo pipefail
 
@@ -78,6 +78,9 @@ RDP_CAPTURE="${RDP_CAPTURE:-ext}"     # ext-image-copy-capture-v1; the older wlr
                                       # path stalls every ~2s on Hyprland 0.56 (sluggish).
                                       # Set RDP_CAPTURE=wlr to fall back if ext misbehaves.
 RDP_AUDIO="${RDP_AUDIO:-redirect}"
+RDP_MAX_FRAMES="${RDP_MAX_FRAMES:-2}" # unacked EGFX frames in flight. Low = responsive
+                                      # (less buffering/latency); high = smoother but laggy.
+                                      # 2 is the sweet spot; 1 was choppy, default is laggy.
 LOG="${XDG_STATE_HOME:-$HOME/.local/state}/hypr-rdp.log"
 mkdir -p "$(dirname "$LOG")"
 
@@ -98,7 +101,7 @@ BIND="${TSIP:-127.0.0.1}:$RDP_PORT"
 pkill -x hypr-rdp 2>/dev/null || true
 sleep 0.3
 
-echo "$(date -Iseconds) starting hypr-rdp on $BIND (fps=$RDP_FPS codec=$RDP_CODEC capture=$RDP_CAPTURE)" >>"$LOG"
+echo "$(date -Iseconds) starting hypr-rdp on $BIND (fps=$RDP_FPS codec=$RDP_CODEC capture=$RDP_CAPTURE frames=$RDP_MAX_FRAMES)" >>"$LOG"
 exec hypr-rdp \
   -u "$USER" \
   -p "$PW" \
@@ -107,6 +110,7 @@ exec hypr-rdp \
   --egfx-codec "$RDP_CODEC" \
   --capture-mode "$RDP_CAPTURE" \
   --audio-mode "$RDP_AUDIO" \
+  --max-frames-in-flight "$RDP_MAX_FRAMES" \
   >>"$LOG" 2>&1
 CMD
 chmod +x "$HOME/.local/bin/omarchy-rdp-server"

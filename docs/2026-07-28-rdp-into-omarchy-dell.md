@@ -63,23 +63,30 @@ consistent and boring.
   to `wlr`, but wlr-screencopy **stalls every ~2s on Hyprland 0.56** (`WLR frame
   stalled` in the log → very sluggish), so we default to `ext`. `RDP_CAPTURE=wlr`
   falls back if needed.
-- **Encode:** VA-API H.264. omarchy-dell is Intel CometLake UHD → `intel-media-driver`
-  (iHD). Missing the driver only means slower OpenH264 software encode, not failure.
-- **Session:** hypr-rdp mirrors the **live** output, so you see exactly what's on
-  omarchy-dell's screen. `/dynamic-resolution` on the client asks the session to
-  match the client window. If the physical monitor flickers on resize, drop
-  `/dynamic-resolution` (add `/smart-sizing:on` instead) or serve a headless
-  virtual output — see "Variants" below.
+- **Encode:** VA-API H.264, **AVC420** (client `/gfx:AVC420`). AVC444 works but is
+  ~4× the data and heavier to decode; AVC420 is much snappier with only slightly
+  softer text. omarchy-dell is Intel CometLake UHD → `intel-media-driver` (iHD);
+  missing the driver only means slower OpenH264 software encode, not failure.
+- **Latency:** `--max-frames-in-flight 2` on the server — few unacknowledged frames
+  buffered, so the picture (and cursor) tracks close to real-time. `1` is snappiest
+  but choppy; the hypr-rdp default buffers more and feels laggy/trailing.
+- **Display fill:** `/dynamic-resolution` matches the remote to the client window,
+  and **`/smart-sizing`** scales the remote buffer to fill the window regardless of
+  the monitor's fractional scale (1.25 on the ultrawide, 1.5 on the laptop). Without
+  it SDL draws the buffer at 1:1 physical px and leaves a margin. This is what makes
+  it **robust across the ultrawide and the laptop-only screen** — no hardcoded res.
+- **Session:** hypr-rdp serves a **headless output** it creates (doesn't disturb
+  dell's physical monitor), sized to the client via `/dynamic-resolution`.
 
 ## What the migrations do
 
 **`0000000020_install_omarchy_dell_rdp.sh` (client, runs on omarchy-asus):**
 - Ensures `freerdp` is installed (provides `sdl-freerdp3`; already present here).
 - Writes `~/.local/bin/omarchy-dell` (+ `dell` alias) — `sdl-freerdp3` to
-  `100.116.131.117` (`--lan` → `192.168.68.51`), `/gfx:AVC444 /sound +clipboard
-  /dynamic-resolution /network:lan +auto-reconnect`, password from keyring service
-  `omarchy-dell`. Runs **windowed** at the focused monitor's pixel size, then
-  Hyprland-fullscreens the window (`--windowed` to opt out).
+  `100.116.131.117` (`--lan` → `192.168.68.51`), `/gfx:AVC420 /dynamic-resolution
+  /smart-sizing /sound +clipboard /network:lan +auto-reconnect`, password from
+  keyring service `omarchy-dell`. Runs **windowed** at the focused monitor's pixel
+  size, then Hyprland-fullscreens the window (`--windowed` to opt out).
 - Adds a Walker `.desktop` launcher (absolute path — Walker's uwsm PATH excludes
   `~/.local/bin`).
 - Detects a missing keyring password and prints the one-time `secret-tool` step.

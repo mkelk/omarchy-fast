@@ -55,7 +55,7 @@ set -euo pipefail
 USER_DEFAULT="melk"                          # omarchy-dell local account
 HOST_TS="100.116.131.117"                    # omarchy-dell tailnet IP (works anywhere)
 HOST_LAN="192.168.68.51"                     # home LAN IP (fallback for --lan)
-GFX="AVC444"                                 # H.264 mode: AVC444 (best) / AVC420 / RFX
+GFX="AVC420"                                 # H.264 mode: AVC420 (light/fast) / AVC444 (crisper) / RFX
 SECRET_SERVICE="omarchy-dell"                # gnome-keyring entry holding the RDP password
 # ---------------------------------------------------------------------------
 # MagicDNS name (if Tailscale DNS is healthy): omarchy-dell.tailb12dd.ts.net
@@ -126,6 +126,7 @@ SDL_VIDEODRIVER=wayland sdl-freerdp3 \
   /w:"$GEO_W" /h:"$GEO_H" \
   /gfx:"$GFX" \
   /dynamic-resolution \
+  /smart-sizing \
   /sound \
   +clipboard \
   /network:lan \
