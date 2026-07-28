@@ -84,6 +84,22 @@ fi
 
 echo ">> connecting to omarchy-dell ($HOST) as $USER_NAME"
 
+# Once the FreeRDP window maps, focus + fullscreen it in Hyprland. FreeRDP only
+# grabs the keyboard (forwarding ALL keys, incl. SUPER, to the remote) when its
+# window is focused; a tiled/unfocused window leaks every keystroke to the local
+# compositor. Skipped with --windowed. Release the grab in-session with Right CTRL.
+if [ -n "$FULLSCREEN" ] && command -v hyprctl >/dev/null 2>&1; then
+  ( for _ in $(seq 1 40); do
+      addr=$(hyprctl clients 2>/dev/null | awk -v h="FreeRDP: $HOST" '$0 ~ ("^Window .* -> " h) {print $2; exit}')
+      if [ -n "$addr" ]; then
+        hyprctl dispatch focuswindow address:0x"$addr" >/dev/null 2>&1
+        hyprctl dispatch fullscreen 0 >/dev/null 2>&1
+        break
+      fi
+      sleep 0.25
+    done ) &
+fi
+
 # Capture output so we can tell a genuine failure from a normal close. This FreeRDP
 # build raises SIGABRT on teardown even on success, so the exit code is unreliable —
 # decide from the actual error text in the log, not from $?.

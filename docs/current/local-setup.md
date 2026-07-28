@@ -120,6 +120,7 @@ secret-tool clear  service omarchy-dell
 | Client window never appears, "Login rejected" | Passwords don't match on the two ends | Re-store the **same** password in both keyrings (above) |
 | "Could not reach …" notification | dell offline, Tailscale down, or hypr-rdp not running | Check `tailscale status`; on dell see the server is up (`pgrep -a hypr-rdp`), or on home wifi try `omarchy-dell --lan` |
 | hypr-rdp on dell exits immediately | No password stored, or launched outside the Hyprland session (no Wayland env) | Store the password; run `omarchy-rdp-server` from a terminal **inside** the session, check `~/.local/state/hypr-rdp.log` |
+| **Keystrokes go to local Omarchy, not the remote session** | The RDP window came up tiled/unfocused, so FreeRDP's keyboard grab never engaged (it only grabs when focused). | `omarchy-dell` now auto-focuses + **fullscreens** the window on connect so the grab engages. If it ever tiles, just focus it. In-session: **Right CTRL** releases the keyboard/mouse grab (back to local); **Ctrl+Alt+Enter** toggles fullscreen. |
 | Black screen / capture fails | Hyprland doesn't expose the default capture protocol | On dell: `RDP_CAPTURE=ext omarchy-rdp-server &` (and set `RDP_CAPTURE=ext` in the launcher) |
 | Everything too small / too big on the client | HiDPI scaling | Edit `~/.local/bin/omarchy-dell`: set `SCALE` to `100`/`140`/`180` |
 | Choppy / high latency | Software encode (missing VA-API driver) or wifi power-save | Confirm `intel-media-driver` on dell (`vainfo`); wifi power-save is disabled by migration 0000000013 |
